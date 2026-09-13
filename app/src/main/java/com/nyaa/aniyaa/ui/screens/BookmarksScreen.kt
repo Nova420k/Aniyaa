@@ -22,6 +22,7 @@ import androidx.compose.material.icons.filled.BookmarkBorder
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Search
+import androidx.compose.material.icons.filled.Share
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -65,6 +66,7 @@ import com.nyaa.aniyaa.data.model.Torrent
 import com.nyaa.aniyaa.data.prefs.AppPreferences
 import com.nyaa.aniyaa.ui.viewmodel.BookmarkViewModel
 import com.nyaa.aniyaa.util.copyText
+import com.nyaa.aniyaa.util.magnetExportText
 import com.nyaa.aniyaa.util.openMagnet
 import com.nyaa.aniyaa.util.shareText
 import com.nyaa.aniyaa.util.torrentShareText
@@ -109,6 +111,19 @@ fun BookmarksScreen(
                     Text("Bookmarks", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
                 },
                 actions = {
+                    if (bookmarks.isNotEmpty()) {
+                        IconButton(onClick = {
+                            val magnets = magnetExportText(bookmarks)
+                            if (magnets.isBlank()) {
+                                scope.launch { snackbarHostState.showSnackbar("No magnet links to copy") }
+                            } else {
+                                copyText(context, "Magnets", magnets)
+                                scope.launch { snackbarHostState.showSnackbar("Copied ${magnets.lines().size} magnet${if (magnets.lines().size == 1) "" else "s"}") }
+                            }
+                        }) {
+                            Icon(Icons.Default.Share, contentDescription = "Export magnets")
+                        }
+                    }
                     IconButton(onClick = { bookmarkViewModel.refreshStats() }, enabled = !refreshing) {
                         Icon(Icons.Default.Refresh, contentDescription = "Refresh stats")
                     }

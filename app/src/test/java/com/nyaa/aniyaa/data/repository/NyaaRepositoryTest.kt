@@ -36,6 +36,12 @@ class NyaaRepositoryTest {
     )
 
     @Test
+    fun looksLikeChallengePage_detectsCloudflare() {
+        assertTrue(looksLikeChallengePage("<html>Just a moment... cf-browser-verification</html>"))
+        assertFalse(looksLikeChallengePage("<table class=\"torrent-list\"><tr><td><a href=\"/view/1\">x</a></td></tr></table>"))
+    }
+
+    @Test
     fun mergeSearchPages_replaceDedupesAndStopsWhenShortPage() {
         val incoming = listOf(makeTorrent("1"), makeTorrent("1"), makeTorrent("2"))
         val (merged, canLoadMore) = mergeSearchPages(emptyList(), incoming, replace = true)

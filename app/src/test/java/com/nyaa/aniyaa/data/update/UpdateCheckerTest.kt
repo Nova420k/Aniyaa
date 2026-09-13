@@ -9,6 +9,7 @@ class UpdateCheckerTest {
 
     @Test
     fun isNewer_comparesDottedVersions() {
+        assertTrue(UpdateChecker.latestUrls.first().contains("Nova420k/Aniyaa"))
         assertTrue(UpdateChecker.isNewer("1.1.0", "1.0.0"))
         assertTrue(UpdateChecker.isNewer("v1.2.0", "1.1.9"))
         assertFalse(UpdateChecker.isNewer("1.1.0", "1.1.0"))

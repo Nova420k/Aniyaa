@@ -109,6 +109,9 @@ fun downloadTorrentFile(context: Context, torrent: Torrent): String {
     }
 }
 
+fun magnetExportText(torrents: List<Torrent>): String =
+    torrents.map { it.resolvedMagnet() }.filter { it.isNotBlank() }.joinToString("\n")
+
 fun torrentShareText(torrent: Torrent): String {
     val magnet = torrent.resolvedMagnet()
     return buildString {

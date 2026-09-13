@@ -13,37 +13,44 @@ data class AppUpdate(
 )
 
 object UpdateChecker {
-    private const val LATEST_URL =
+    internal val latestUrls = listOf(
+        "https://api.github.com/repos/Nova420k/Aniyaa/releases/latest",
         "https://api.github.com/repos/Gourab0002/Aniyaa/releases/latest"
+    )
 
     suspend fun check(): Result<AppUpdate?> {
-        return try {
-            val request = AppHttpClient.newRequest(LATEST_URL).newBuilder()
-                .header("Accept", "application/vnd.github+json")
-                .build()
-            AppHttpClient.instance.newCall(request).await().use { response ->
-                if (!response.isSuccessful) {
-                    return Result.failure(Exception("Could not check for updates (HTTP ${response.code})"))
-                }
-                val body = response.body?.string().orEmpty()
-                val json = JSONObject(body)
-                val tag = json.optString("tag_name").removePrefix("v")
-                if (tag.isBlank() || !isNewer(tag, BuildConfig.VERSION_NAME)) {
-                    return Result.success(null)
-                }
-                Result.success(
-                    AppUpdate(
-                        versionName = tag,
-                        htmlUrl = json.optString("html_url")
-                            .ifBlank { "https://github.com/Gourab0002/Aniyaa/releases/latest" },
-                        notes = json.optString("body"),
-                        apkUrl = apkAssetUrl(json)
+        var lastError: Exception? = null
+        for (url in latestUrls) {
+            try {
+                val request = AppHttpClient.newRequest(url).newBuilder()
+                    .header("Accept", "application/vnd.github+json")
+                    .build()
+                AppHttpClient.instance.newCall(request).await().use { response ->
+                    if (!response.isSuccessful) {
+                        lastError = Exception("Could not check for updates (HTTP ${response.code})")
+                        return@use
+                    }
+                    val body = response.body?.string().orEmpty()
+                    val json = JSONObject(body)
+                    val tag = json.optString("tag_name").removePrefix("v")
+                    if (tag.isBlank() || !isNewer(tag, BuildConfig.VERSION_NAME)) {
+                        return Result.success(null)
+                    }
+                    return Result.success(
+                        AppUpdate(
+                            versionName = tag,
+                            htmlUrl = json.optString("html_url")
+                                .ifBlank { "https://github.com/Nova420k/Aniyaa/releases/latest" },
+                            notes = json.optString("body"),
+                            apkUrl = apkAssetUrl(json)
+                        )
                     )
-                )
+                }
+            } catch (e: Exception) {
+                lastError = e
             }
-        } catch (e: Exception) {
-            Result.failure(e)
         }
+        return Result.failure(lastError ?: Exception("Could not check for updates"))
     }
 
     internal fun isNewer(remote: String, local: String): Boolean {

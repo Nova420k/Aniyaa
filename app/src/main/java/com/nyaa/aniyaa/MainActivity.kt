@@ -336,13 +336,17 @@ fun AniyaaApp(
         }
     }
 
-    fun openUser(username: String, site: CatalogSite) {
-        searchViewModel.applyParams(SearchParams(query = "user:$username", site = site))
+    fun openSearch(query: String, site: CatalogSite) {
+        searchViewModel.applyParams(SearchParams(query = query, site = site))
         selectedTorrent = null
         navController.navigate("search") {
             popUpTo("search") { inclusive = true }
             launchSingleTop = true
         }
+    }
+
+    fun openUser(username: String, site: CatalogSite) {
+        openSearch("user:$username", site)
     }
 
     fun goToSearch() {
@@ -601,6 +605,7 @@ fun AniyaaApp(
                                 )
                             }
                         },
+                        onSearch = { query, followSite -> openSearch(query, followSite) },
                         bookmarkViewModel = bookmarkViewModel,
                         searchHistoryViewModel = searchHistoryViewModel
                     )
@@ -626,6 +631,7 @@ fun AniyaaApp(
                                     )
                                 }
                             },
+                            onSearch = { query, followSite -> openSearch(query, followSite) },
                             bookmarkViewModel = bookmarkViewModel,
                             searchHistoryViewModel = searchHistoryViewModel
                         )
@@ -647,6 +653,7 @@ private fun TorrentDetailGate(
     onOpenUser: (String, CatalogSite) -> Unit,
     onOpenCatalogLink: (CatalogDeepLink) -> Unit,
     onFollow: (String, String, CatalogSite) -> Unit = { _, _, _ -> },
+    onSearch: (String, CatalogSite) -> Unit = { _, _ -> },
     bookmarkViewModel: BookmarkViewModel,
     searchHistoryViewModel: SearchHistoryViewModel
 ) {
@@ -691,6 +698,7 @@ private fun TorrentDetailGate(
                 onOpenUser = onOpenUser,
                 onOpenCatalogLink = onOpenCatalogLink,
                 onFollow = { name, query -> onFollow(name, query, torrent!!.site) },
+                onSearch = { query -> onSearch(query, torrent!!.site) },
                 bookmarkViewModel = bookmarkViewModel
             )
         }

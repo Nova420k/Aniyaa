@@ -6,7 +6,7 @@
 
 Search [nyaa.si](https://nyaa.si) from your Android phone. [Sukebei](https://sukebei.nyaa.si) is optional and stays off until you turn it on.
 
-[Download the latest version](https://github.com/Gourab0002/Aniyaa/releases/latest) · Android 7.0 or newer
+[Download the latest version](https://github.com/Nova420k/Aniyaa/releases/latest) · Android 7.0 or newer
 
 </div>
 
@@ -24,12 +24,12 @@ It is **not** an official nyaa.si or sukebei.nyaa.si app, and it is **not** a to
 
 ## Download and install
 
-1. On your phone, open the **[latest release](https://github.com/Gourab0002/Aniyaa/releases/latest)**.
+1. On your phone, open the **[latest release](https://github.com/Nova420k/Aniyaa/releases/latest)**.
 2. Tap **Aniyaa-v…apk** to download it.
 3. Open the downloaded file. If Android warns that the app isn’t from the Play Store, choose **Install anyway**. You may need to allow your browser (or Files) to install apps — Android will show a switch for that.
 4. Open **Aniyaa** from your app drawer.
 
-To update later, download a newer APK from the same [Releases](https://github.com/Gourab0002/Aniyaa/releases) page and install it over the old one, or use **Settings → Updates → Install**. You won’t lose bookmarks. [Obtainium](https://github.com/ImranR98/Obtainium) can watch that releases URL for you.
+To update later, download a newer APK from the same [Releases](https://github.com/Nova420k/Aniyaa/releases) page and install it over the old one, or use **Settings → Updates → Install**. You won’t lose bookmarks. [Obtainium](https://github.com/ImranR98/Obtainium) can watch `https://github.com/Nova420k/Aniyaa/releases`.
 
 If you previously used **Sukiniyaa**, install Aniyaa separately and export/import a backup from Settings if you want to keep saved data. The two apps use different package names, so they cannot update in place.
 

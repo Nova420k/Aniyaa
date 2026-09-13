@@ -1,0 +1,4 @@
+Aniyaa is an unofficial Android client for browsing nyaa.si (and optional Sukebei). Search, filter, bookmark, and open magnets in the torrent app you already use. It is not a torrent downloader.
+
+Obtainium users can watch:
+https://github.com/Nova420k/Aniyaa/releases

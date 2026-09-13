@@ -21,8 +21,10 @@ import com.nyaa.aniyaa.AniyaaApplication
 import com.nyaa.aniyaa.MainActivity
 import com.nyaa.aniyaa.R
 import com.nyaa.aniyaa.data.db.AppDatabase
+import com.nyaa.aniyaa.data.model.Torrent
 import com.nyaa.aniyaa.data.repository.NyaaRepository
 import com.nyaa.aniyaa.data.repository.SavedSearchRepository
+import kotlinx.coroutines.delay
 import java.util.concurrent.TimeUnit
 
 class SavedSearchWorker(
@@ -40,8 +42,12 @@ class SavedSearchWorker(
 
         var anyFailure = false
         notifying.forEach { saved ->
-            val result = repository.search(saved.toSearchParams(), forceNetwork = true)
-            val torrents = result.getOrNull()
+            var torrents: List<Torrent>? = null
+            for (attempt in 0 until 3) {
+                torrents = repository.search(saved.toSearchParams(), forceNetwork = true).getOrNull()
+                if (torrents != null) break
+                if (attempt < 2) delay(2_000L * (attempt + 1))
+            }
             if (torrents == null) {
                 anyFailure = true
                 return@forEach

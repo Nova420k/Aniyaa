@@ -18,6 +18,14 @@ object DescriptionFormatter {
         return stripEmptyImageMarkup(normalizeWhitespace(convertBbcode(raw.trim())))
     }
 
+    fun allImages(raw: String): List<DescriptionImage> {
+        val found = LinkedHashMap<String, DescriptionImage>()
+        prepare(raw).lineSequence().forEach { line ->
+            imagesIn(line).forEach { image -> found.putIfAbsent(image.url, image) }
+        }
+        return found.values.toList()
+    }
+
     fun blocks(raw: String): List<DescriptionBlock> {
         val prepared = prepare(raw)
         if (prepared.isBlank()) return emptyList()

@@ -34,8 +34,10 @@ import androidx.compose.foundation.layout.statusBars
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.layout.windowInsetsPadding
+import androidx.compose.foundation.ScrollState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.itemsIndexed
@@ -97,6 +99,7 @@ import androidx.compose.runtime.setValue
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
@@ -132,7 +135,9 @@ import com.nyaa.aniyaa.util.PubDateFormatter
 import com.nyaa.aniyaa.util.formatCount
 import com.nyaa.aniyaa.util.hasNotificationPermission
 import com.nyaa.aniyaa.util.openMagnet
+import com.nyaa.aniyaa.util.magnetExportText
 import com.nyaa.aniyaa.util.parseReleaseTitle
+import com.nyaa.aniyaa.util.qualityTags
 import com.nyaa.aniyaa.util.prepareSavedSearchAlerts
 import kotlinx.coroutines.launch
 
@@ -176,6 +181,9 @@ fun SearchScreen(
     val listState = rememberLazyListState()
     val interactionSource = remember { MutableInteractionSource() }
     val bookmarkedIds = remember(bookmarks) { bookmarks.map { it.bookmarkKey() }.toSet() }
+    val viewedListings by searchHistoryViewModel.viewed.collectAsStateWithLifecycle()
+    val viewedKeys = remember(viewedListings) { viewedListings.map { it.bookmarkKey() }.toSet() }
+    val filterScrollState = rememberSaveable(saver = ScrollState.Saver) { ScrollState(0) }
     var showSukebeiWarning by remember { mutableStateOf(false) }
     var selecting by remember { mutableStateOf(false) }
     var selectedKeys by remember { mutableStateOf(setOf<String>()) }
@@ -359,11 +367,15 @@ fun SearchScreen(
                     OutlinedButton(
                         onClick = {
                             val selected = uiState.torrents.filter { it.bookmarkKey() in selectedKeys }
-                            val text = selected.joinToString("\n\n") { torrentShareText(it) }
-                            copyText(context, "Magnets", text)
-                            scope.launch { snackbarHostState.showSnackbar("Copied ${selected.size} listing${if (selected.size == 1) "" else "s"}") }
+                            val magnets = magnetExportText(selected)
+                            if (magnets.isBlank()) {
+                                scope.launch { snackbarHostState.showSnackbar("No magnet links to copy") }
+                            } else {
+                                copyText(context, "Magnets", magnets)
+                                scope.launch { snackbarHostState.showSnackbar("Copied ${magnets.lines().size} magnet${if (magnets.lines().size == 1) "" else "s"}") }
+                            }
                         }
-                    ) { Text("Copy") }
+                    ) { Text("Copy magnets") }
                 }
             }
             SearchResultsBody(
@@ -371,6 +383,7 @@ fun SearchScreen(
                 listState = listState,
                 bottomPadding = bottomPadding,
                 bookmarkedIds = bookmarkedIds,
+                viewedKeys = viewedKeys,
                 selecting = selecting,
                 selectedKeys = selectedKeys,
                 compact = prefs.compactCards,
@@ -428,6 +441,7 @@ fun SearchScreen(
         ) {
             FilterBottomSheetContent(
                 searchParams = uiState.searchParams,
+                scrollState = filterScrollState,
                 categories = uiState.searchParams.site.categories,
                 defaultCategory = prefs.defaultCategory(uiState.searchParams.site),
                 defaultSortField = com.nyaa.aniyaa.data.model.sortFieldByValue(prefs.defaultSortFieldValue(uiState.searchParams.site)),
@@ -543,6 +557,7 @@ private fun SearchResultsBody(
     listState: LazyListState,
     bottomPadding: Dp,
     bookmarkedIds: Set<String>,
+    viewedKeys: Set<String> = emptySet(),
     selecting: Boolean = false,
     selectedKeys: Set<String> = emptySet(),
     compact: Boolean = false,
@@ -679,6 +694,7 @@ private fun SearchResultsBody(
                             onCopyTitle = { onCopyTitle(torrent) },
                             onShare = { onShare(torrent) },
                             onFollow = onFollow,
+                            viewed = torrent.bookmarkKey() in viewedKeys,
                             onSearchQuery = onSearchQuery,
                             onOpenUser = onOpenUser
                         )
@@ -705,6 +721,7 @@ private fun SearchResultsBody(
 @Composable
 fun FilterBottomSheetContent(
     searchParams: SearchParams,
+    scrollState: ScrollState = rememberScrollState(),
     categories: List<Category> = searchParams.site.categories,
     defaultCategory: Category = categories.first(),
     defaultSortField: SortField = SortField.DATE,
@@ -730,7 +747,7 @@ fun FilterBottomSheetContent(
             modifier = Modifier
                 .fillMaxWidth()
                 .weight(1f, fill = false)
-                .verticalScroll(rememberScrollState())
+                .verticalScroll(scrollState)
                 .padding(horizontal = 24.dp)
         ) {
         Text(
@@ -1045,15 +1062,18 @@ fun TorrentCard(
     onShare: (() -> Unit)? = null,
     onFollow: ((String, String) -> Unit)? = null,
     onSearchQuery: ((String) -> Unit)? = null,
-    onOpenUser: ((String) -> Unit)? = null
+    onOpenUser: ((String) -> Unit)? = null,
+    viewed: Boolean = false
 ) {
     var menu by remember { mutableStateOf(false) }
     val parsed = remember(torrent.title) { parseReleaseTitle(torrent.title) }
+    val quality = remember(torrent.title) { qualityTags(torrent.title) }
     val hasMenu = onMagnet != null || onCopyMagnet != null || onToggleBookmark != null ||
         onCopyTitle != null || onShare != null || onFollow != null
     Card(
         modifier = Modifier
             .fillMaxWidth()
+            .alpha(if (viewed) 0.62f else 1f)
             .combinedClickable(
                 onClick = { onClick(torrent) },
                 onLongClick = { if (hasMenu) menu = true }
@@ -1154,6 +1174,17 @@ fun TorrentCard(
                             style = MaterialTheme.typography.labelSmall,
                             modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
                             color = MaterialTheme.colorScheme.onSecondaryContainer,
+                            fontWeight = FontWeight.Medium
+                        )
+                    }
+                }
+                quality.forEach { tag ->
+                    Surface(shape = RoundedCornerShape(8.dp), color = MaterialTheme.colorScheme.surfaceContainerHighest) {
+                        Text(
+                            text = tag,
+                            style = MaterialTheme.typography.labelSmall,
+                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
                             fontWeight = FontWeight.Medium
                         )
                     }

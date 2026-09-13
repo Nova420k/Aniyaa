@@ -17,6 +17,14 @@ class DescriptionFormatterTest {
     }
 
     @Test
+    fun allImages_collectsUniqueUrls() {
+        val images = DescriptionFormatter.allImages(
+            "![one](https://cdn.example.com/1.png)\ntext\nhttps://files.catbox.moe/ab.png"
+        )
+        assertEquals(2, images.size)
+    }
+
+    @Test
     fun imagesIn_findsInlineMarkdownAndBareUrls() {
         val line = "Source ![one](https://cdn.example.com/1.png) and https://files.catbox.moe/ab.png extra"
         val images = DescriptionFormatter.imagesIn(line)

@@ -135,6 +135,7 @@ fun TorrentDetailScreen(
     onOpenUser: (String, com.nyaa.aniyaa.data.model.CatalogSite) -> Unit = { _, _ -> },
     onOpenCatalogLink: (CatalogDeepLink) -> Unit = {},
     onFollow: (String, String) -> Unit = { _, _ -> },
+    onSearch: (String) -> Unit = {},
     bookmarkViewModel: BookmarkViewModel = viewModel(),
     commentsViewModel: CommentsViewModel = viewModel(
         key = torrent.id.ifEmpty { torrent.infoHash }.ifEmpty { torrent.guid }
@@ -159,6 +160,8 @@ fun TorrentDetailScreen(
     }
     val submitter = commentsState.submitter.ifBlank { displayTorrent.submitter }
     val parsedTitle = remember(displayTorrent.title) { parseReleaseTitle(displayTorrent.title) }
+    var viewerImages by remember { mutableStateOf<List<com.nyaa.aniyaa.util.DescriptionImage>>(emptyList()) }
+    var viewerIndex by remember { mutableStateOf<Int?>(null) }
 
     LaunchedEffect(torrent.id) {
         if (torrent.id.isNotBlank()) {
@@ -261,20 +264,38 @@ fun TorrentDetailScreen(
             }
             }
 
-            if (parsedTitle.show != null || parsedTitle.group != null) {
+            if (parsedTitle.show != null || parsedTitle.group != null || submitter.isNotBlank()) {
                 item(key = "follow") {
                     FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                         parsedTitle.show?.let { show ->
                             FilledTonalButton(
+                                onClick = { onSearch(show) },
+                                shape = RoundedCornerShape(12.dp)
+                            ) { Text("More from “$show”") }
+                            OutlinedButton(
                                 onClick = { onFollow(show, show) },
                                 shape = RoundedCornerShape(12.dp)
-                            ) { Text("Follow “$show”") }
+                            ) { Text("Follow show") }
                         }
                         parsedTitle.group?.let { group ->
+                            FilledTonalButton(
+                                onClick = { onSearch(group) },
+                                shape = RoundedCornerShape(12.dp)
+                            ) { Text("More from [$group]") }
                             OutlinedButton(
                                 onClick = { onFollow(group, group) },
                                 shape = RoundedCornerShape(12.dp)
-                            ) { Text("Follow [$group]") }
+                            ) { Text("Follow group") }
+                        }
+                        if (submitter.isNotBlank()) {
+                            FilledTonalButton(
+                                onClick = { onOpenUser(submitter, displayTorrent.site) },
+                                shape = RoundedCornerShape(12.dp)
+                            ) { Text("More from $submitter") }
+                            OutlinedButton(
+                                onClick = { onFollow(submitter, "user:$submitter") },
+                                shape = RoundedCornerShape(12.dp)
+                            ) { Text("Follow uploader") }
                         }
                     }
                 }
@@ -592,6 +613,13 @@ fun TorrentDetailScreen(
                             } else {
                                 false
                             }
+                        },
+                        onImageClick = { url ->
+                            val images = DescriptionFormatter.allImages(comment.content).ifEmpty {
+                                listOf(com.nyaa.aniyaa.util.DescriptionImage(url))
+                            }
+                            viewerImages = images
+                            viewerIndex = images.indexOfFirst { it.url == url }.coerceAtLeast(0)
                         }
                     )
                 }
@@ -602,6 +630,17 @@ fun TorrentDetailScreen(
             }
         }
     }
+    val startIndex = viewerIndex
+    if (startIndex != null && viewerImages.isNotEmpty()) {
+        ImageViewerDialog(
+            images = viewerImages,
+            startIndex = startIndex.coerceIn(viewerImages.indices),
+            onDismiss = {
+                viewerIndex = null
+                viewerImages = emptyList()
+            }
+        )
+    }
 }
 
 @Composable
@@ -609,7 +648,8 @@ private fun CommentItem(
     comment: TorrentComment,
     onOpenUser: () -> Unit = {},
     onOpenPermalink: () -> Unit = {},
-    onCatalogLink: (String) -> Boolean = { false }
+    onCatalogLink: (String) -> Boolean = { false },
+    onImageClick: ((String) -> Unit)? = null
 ) {
     val avatarSize = 36.dp
     val avatarSpacing = 10.dp
@@ -669,7 +709,8 @@ private fun CommentItem(
         MarkdownContent(
             markdown = comment.content,
             modifier = Modifier.padding(start = avatarSize + avatarSpacing),
-            onCatalogLink = onCatalogLink
+            onCatalogLink = onCatalogLink,
+            onImageClick = onImageClick
         )
     }
 }
@@ -680,7 +721,8 @@ internal fun MarkdownContent(
     modifier: Modifier = Modifier,
     onCatalogLink: (String) -> Boolean = { false },
     compact: Boolean = true,
-    renderInlineImages: Boolean = true
+    renderInlineImages: Boolean = true,
+    onImageClick: ((String) -> Unit)? = null
 ) {
     val context = LocalContext.current
     val textColor = MaterialTheme.colorScheme.onSurface.toArgb()
@@ -701,7 +743,8 @@ internal fun MarkdownContent(
         codeBg,
         outline,
         compact,
-        renderInlineImages
+        renderInlineImages,
+        onImageClick
     ) {
         val builder = Markwon.builder(context)
         if (renderInlineImages) {
@@ -742,9 +785,27 @@ internal fun MarkdownContent(
                         .bulletListItemStrokeWidth(if (compact) 1 else 2)
                 }
 
+                override fun configureSpansFactory(builder: io.noties.markwon.MarkwonSpansFactory.Builder) {
+                    if (onImageClick != null) {
+                        builder.appendFactory(org.commonmark.node.Image::class.java) { _, props ->
+                            val dest = io.noties.markwon.image.ImageProps.DESTINATION.require(props)
+                            object : android.text.style.ClickableSpan() {
+                                override fun onClick(widget: android.view.View) {
+                                    if (isSafeHttpUrl(dest)) onImageClick.invoke(dest)
+                                }
+                                override fun updateDrawState(ds: android.text.TextPaint) = Unit
+                            }
+                        }
+                    }
+                }
+
                 override fun configureConfiguration(builder: MarkwonConfiguration.Builder) {
                     builder.linkResolver { view, link ->
                         if (onCatalogLink(link)) return@linkResolver
+                        if (onImageClick != null && isSafeHttpUrl(link) && DescriptionFormatter.isImageUrl(link)) {
+                            onImageClick.invoke(link)
+                            return@linkResolver
+                        }
                         if (!isSafeHttpUrl(link)) return@linkResolver
                         try {
                             view.context.startActivity(
@@ -760,6 +821,7 @@ internal fun MarkdownContent(
     AndroidView(
         factory = { ctx ->
             TextView(ctx).apply {
+                setTextIsSelectable(true)
                 movementMethod = LinkMovementMethod.getInstance()
                 setOnTouchListener { view, event ->
                     if (event.actionMasked == MotionEvent.ACTION_MOVE) {
@@ -776,6 +838,7 @@ internal fun MarkdownContent(
             textView.textSize = textSizeSp
             textView.setLineSpacing(if (compact) 2f else 6f, if (compact) 1.15f else 1.25f)
             textView.setPadding(0, 0, 0, 0)
+            textView.setTextIsSelectable(true)
             val prepared = DescriptionFormatter.prepare(markdown)
             if (textView.tag != prepared) {
                 textView.tag = prepared

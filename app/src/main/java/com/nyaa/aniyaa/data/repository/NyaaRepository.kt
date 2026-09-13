@@ -28,6 +28,20 @@ import java.util.concurrent.TimeUnit
 
 internal const val NYAA_PAGE_SIZE = 75
 
+internal fun looksLikeChallengePage(html: String): Boolean {
+    val sample = html.take(8_000).lowercase()
+    return "cf-browser-verification" in sample ||
+        "challenge-platform" in sample ||
+        "just a moment" in sample ||
+        "checking your browser" in sample ||
+        ("cf-ray" in sample && "torrent-list" !in sample)
+}
+
+internal fun looksLikeNyaaSearchPage(html: String): Boolean {
+    val sample = html.take(20_000).lowercase()
+    return "torrent-list" in sample || "class=\"table" in sample || "/view/" in sample
+}
+
 internal fun torrentIdentity(torrent: Torrent): String = torrent.bookmarkKey()
 
 internal fun sortTorrents(torrents: List<Torrent>, params: SearchParams): List<Torrent> {
@@ -253,7 +267,14 @@ class NyaaRepository(
                 throw HttpException(response.code, "HTTP ${response.code}: ${response.message}")
             }
             val html = response.body?.string() ?: throw IllegalStateException("Empty response")
-            NyaaHtmlSearchParser.parse(html, baseUrl).map { it.copy(site = params.site) }
+            if (looksLikeChallengePage(html)) {
+                throw HttpException(response.code, "Catalog returned a challenge page instead of search results")
+            }
+            val parsed = NyaaHtmlSearchParser.parse(html, baseUrl).map { it.copy(site = params.site) }
+            if (parsed.isEmpty() && !looksLikeNyaaSearchPage(html)) {
+                throw HttpException(response.code, "Catalog returned a web page instead of search results")
+            }
+            parsed
         }
     }
 
