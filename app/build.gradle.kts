@@ -29,6 +29,20 @@ val hasReleaseSigning = listOf(
     releaseKeyPassword
 ).all { !it.isNullOrBlank() }
 
+// Versioning: versionCode is derived from the semantic version so every
+// vX.Y.Z tag produces a unique, monotonically increasing code
+// (MAJOR * 10000 + MINOR * 100 + PATCH). VERSION_CODE still wins when set,
+// e.g. for hotfixes that reuse a version name.
+fun versionCodeFromName(name: String): Int? {
+    val match = Regex("""v?(\d+)\.(\d+)\.(\d+)""").find(name.trim()) ?: return null
+    val (major, minor, patch) = match.destructured
+    val code = major.toInt() * 10000 + minor.toInt() * 100 + patch.toInt()
+    return code.takeIf { it > 0 }
+}
+
+val defaultVersionName = "2.5.0"
+val defaultVersionCode = versionCodeFromName(defaultVersionName) ?: 17
+
 android {
     namespace = "com.nyaa.aniyaa"
     compileSdk = 35
@@ -37,15 +51,23 @@ android {
         applicationId = "com.nyaa.aniyaa"
         minSdk = 24
         targetSdk = 35
-        versionCode = 16
-        versionName = "2.5.0"
+        versionCode = defaultVersionCode
+        versionName = defaultVersionName
 
         System.getenv("VERSION_NAME")
             ?.removePrefix("v")
             ?.takeIf { it.isNotBlank() }
-            ?.let { versionName = it }
+            ?.let {
+                versionName = it
+                // Keep versionCode in lockstep with the tag unless CI
+                // supplies an explicit VERSION_CODE override.
+                if (System.getenv("VERSION_CODE").isNullOrBlank()) {
+                    versionCodeFromName(it)?.let { derived -> versionCode = derived }
+                }
+            }
         System.getenv("VERSION_CODE")
             ?.toIntOrNull()
+            ?.takeIf { it > 0 }
             ?.let { versionCode = it }
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
@@ -79,8 +101,15 @@ android {
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
     }
-    kotlinOptions {
-        jvmTarget = "17"
+    kotlin {
+        compilerOptions {
+            jvmTarget.set(org.jetbrains.kotlin.gradle.dsl.JvmTarget.JVM_17)
+        }
+    }
+    lint {
+        abortOnError = true
+        checkReleaseBuilds = true
+        warningsAsErrors = false
     }
     buildFeatures {
         compose = true

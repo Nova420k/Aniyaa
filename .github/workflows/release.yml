@@ -36,8 +36,30 @@ jobs:
       - name: Grant execute permission for gradlew
         run: chmod +x gradlew
 
+      - name: Validate Gradle wrapper
+        uses: gradle/actions/wrapper-validation@v4
+
+      - name: Resolve release version
+        run: |
+          TAG="${GITHUB_REF_NAME}"
+          if ! echo "$TAG" | grep -Eq '^v[0-9]+\.[0-9]+\.[0-9]+$'; then
+            echo "Tag $TAG must match vX.Y.Z"
+            exit 1
+          fi
+          VERSION_NAME="${TAG#v}"
+          MAJOR=$(echo "$VERSION_NAME" | cut -d. -f1)
+          MINOR=$(echo "$VERSION_NAME" | cut -d. -f2)
+          PATCH=$(echo "$VERSION_NAME" | cut -d. -f3)
+          VERSION_CODE=$((MAJOR * 10000 + MINOR * 100 + PATCH))
+          echo "VERSION_NAME=$VERSION_NAME" >> "$GITHUB_ENV"
+          echo "VERSION_CODE=$VERSION_CODE" >> "$GITHUB_ENV"
+          echo "Release $VERSION_NAME (versionCode $VERSION_CODE)"
+
       - name: Unit tests
         run: ./gradlew testDebugUnitTest --no-daemon
+
+      - name: Android Lint
+        run: ./gradlew lintRelease --no-daemon
 
       - name: Build signed release APK
         env:
@@ -45,13 +67,23 @@ jobs:
           KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
           KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
           KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
-          VERSION_NAME: ${{ github.ref_name }}
+          VERSION_NAME: ${{ env.VERSION_NAME }}
+          VERSION_CODE: ${{ env.VERSION_CODE }}
         run: ./gradlew assembleRelease --no-daemon
 
       - name: Prepare APK asset
         run: |
           mkdir -p dist
           cp app/build/outputs/apk/release/app-release.apk "dist/Aniyaa-${GITHUB_REF_NAME}.apk"
+          ls -lh dist/
+
+      - name: Upload Lint report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: lint-release
+          path: app/build/reports/lint-results-release.html
+          if-no-files-found: warn
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
