@@ -6,6 +6,7 @@ import android.net.Uri
 import android.os.Bundle
 import android.view.WindowManager
 import androidx.activity.SystemBarStyle
+import androidx.activity.compose.PredictiveBackHandler
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.appcompat.app.AppCompatActivity
@@ -55,11 +56,13 @@ import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
@@ -323,6 +326,18 @@ fun AniyaaApp(
     var pendingNsfwLink by remember { mutableStateOf<CatalogDeepLink?>(null) }
     val pendingNsfwParams by searchViewModel.pendingNsfwParams.collectAsStateWithLifecycle()
     val scope = androidx.compose.runtime.rememberCoroutineScope()
+    var detailBackProgress by remember { mutableFloatStateOf(0f) }
+    PredictiveBackHandler(enabled = expanded && selectedTorrent != null) { progress ->
+        try {
+            progress.collect { event ->
+                detailBackProgress = event.progress
+            }
+            selectedTorrent = null
+            detailBackProgress = 0f
+        } catch (_: kotlinx.coroutines.CancellationException) {
+            detailBackProgress = 0f
+        }
+    }
 
     LaunchedEffect(expanded) {
         val torrent = selectedTorrent
@@ -612,7 +627,15 @@ fun AniyaaApp(
                 }
             }
             if (expanded && showBottomBar) {
-                Box(modifier = Modifier.weight(1.15f).fillMaxHeight()) {
+                Box(
+                    modifier = Modifier
+                        .weight(1.15f)
+                        .fillMaxHeight()
+                        .graphicsLayer {
+                            translationX = size.width * detailBackProgress
+                            alpha = 1f - (detailBackProgress * 0.25f)
+                        }
+                ) {
                     val torrent = selectedTorrent
                     if (torrent != null) {
                         TorrentDetailGate(

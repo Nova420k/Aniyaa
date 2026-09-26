@@ -2,10 +2,9 @@ import java.util.Properties
 
 plugins {
     alias(libs.plugins.android.application)
-    alias(libs.plugins.kotlin.android)
     alias(libs.plugins.kotlin.compose)
+    alias(libs.plugins.kotlin.parcelize)
     alias(libs.plugins.ksp)
-    id("kotlin-parcelize")
 }
 
 val keystoreProperties = Properties()
@@ -40,7 +39,7 @@ fun versionCodeFromName(name: String): Int? {
     return code.takeIf { it > 0 }
 }
 
-val defaultVersionName = "2.5.0"
+val defaultVersionName = "2.5.1"
 val defaultVersionCode = versionCodeFromName(defaultVersionName) ?: 17
 
 android {
