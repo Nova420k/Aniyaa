@@ -45,7 +45,7 @@ val defaultVersionCode = versionCodeFromName(defaultVersionName) ?: 17
 
 android {
     namespace = "com.nyaa.aniyaa"
-    compileSdk = 35
+    compileSdk = 37
 
     defaultConfig {
         applicationId = "com.nyaa.aniyaa"
