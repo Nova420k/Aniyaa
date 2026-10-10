@@ -120,6 +120,31 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
         prefs.setDefaultSortOrderValue(site, value)
     }
 
+    fun setDefaultResolution(tag: String) {
+        prefs.defaultResolutionTag = tag
+    }
+
+    fun setDefaultCodec(tag: String) {
+        prefs.defaultCodecTag = tag
+    }
+
+    fun setDefaultMinSeeders(value: Int) {
+        prefs.defaultMinSeeders = value
+    }
+
+    fun setDefaultHideBatches(enabled: Boolean) {
+        prefs.defaultHideBatches = enabled
+    }
+
+    fun addHideRule(raw: String) {
+        val error = prefs.addHideRule(raw)
+        if (error != null) _message.value = error
+    }
+
+    fun removeHideRule(rule: String) {
+        prefs.removeHideRule(rule)
+    }
+
     fun setPreferredTorrentPackage(value: String) {
         prefs.preferredTorrentPackage = value
     }

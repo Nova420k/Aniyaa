@@ -83,6 +83,11 @@ class BackupManager(
                 put("lockGraceMs", prefs.lockGraceMs)
                 put("compactCards", prefs.compactCards)
                 put("biometricUnlockEnabled", prefs.biometricUnlockEnabled)
+                put("defaultResolution", prefs.defaultResolutionTag)
+                put("defaultCodec", prefs.defaultCodecTag)
+                put("defaultMinSeeders", prefs.defaultMinSeeders)
+                put("defaultHideBatches", prefs.defaultHideBatches)
+                put("hideRules", JSONArray(prefs.hideRules()))
             }
         )
         val plaintext = root.toString(2)
@@ -183,6 +188,18 @@ class BackupManager(
             if (settings.has("compactCards")) prefs.compactCards = settings.optBoolean("compactCards")
             if (settings.has("biometricUnlockEnabled")) {
                 prefs.biometricUnlockEnabled = settings.optBoolean("biometricUnlockEnabled")
+            }
+            if (settings.has("defaultResolution")) prefs.defaultResolutionTag = settings.optString("defaultResolution")
+            if (settings.has("defaultCodec")) prefs.defaultCodecTag = settings.optString("defaultCodec")
+            if (settings.has("defaultMinSeeders")) prefs.defaultMinSeeders = settings.optInt("defaultMinSeeders")
+            if (settings.has("defaultHideBatches")) prefs.defaultHideBatches = settings.optBoolean("defaultHideBatches")
+            if (settings.has("hideRules")) {
+                val rules = settings.optJSONArray("hideRules")
+                if (rules != null) {
+                    val values = ArrayList<String>(rules.length())
+                    for (i in 0 until rules.length()) values += rules.optString(i)
+                    prefs.setHideRules(values)
+                }
             }
         }
     }

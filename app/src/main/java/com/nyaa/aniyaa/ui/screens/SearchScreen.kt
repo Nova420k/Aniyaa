@@ -26,20 +26,17 @@ import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.heightIn
-import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBars
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.layout.windowInsetsPadding
-import androidx.compose.foundation.ScrollState
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.verticalScroll
-import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListState
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
@@ -56,15 +53,10 @@ import androidx.compose.material.icons.filled.CheckBoxOutlineBlank
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.Download
-import androidx.compose.material.icons.filled.FilterList
 import androidx.compose.material.icons.filled.Link
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.Badge
-import androidx.compose.material3.BadgedBox
-import androidx.compose.material3.BottomSheetDefaults
 import androidx.compose.material3.Button
-import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
@@ -72,11 +64,9 @@ import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
-import androidx.compose.material3.FilterChipDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
@@ -87,7 +77,6 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
-import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.derivedStateOf
@@ -101,11 +90,11 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
@@ -136,6 +125,9 @@ import com.nyaa.aniyaa.util.formatCount
 import com.nyaa.aniyaa.util.hasNotificationPermission
 import com.nyaa.aniyaa.util.openMagnet
 import com.nyaa.aniyaa.util.magnetExportText
+import com.nyaa.aniyaa.util.CodecChoice
+import com.nyaa.aniyaa.util.LocalFilter
+import com.nyaa.aniyaa.util.ResolutionChoice
 import com.nyaa.aniyaa.util.parseReleaseTitle
 import com.nyaa.aniyaa.util.qualityTags
 import com.nyaa.aniyaa.util.prepareSavedSearchAlerts
@@ -162,7 +154,6 @@ fun SearchScreen(
     val keyboardController = LocalSoftwareKeyboardController.current
     val context = LocalContext.current
     val prefs = AniyaaApplication.instance.prefs
-    var showFilterSheet by remember { mutableStateOf(false) }
     var showSaveDialog by remember { mutableStateOf(false) }
     var followSave by remember { mutableStateOf<Pair<String, SearchParams>?>(null) }
     var pendingSave by remember { mutableStateOf<Pair<String, Boolean>?>(null) }
@@ -177,13 +168,11 @@ fun SearchScreen(
             }
         }
     }
-    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     val listState = rememberLazyListState()
     val interactionSource = remember { MutableInteractionSource() }
     val bookmarkedIds = remember(bookmarks) { bookmarks.map { it.bookmarkKey() }.toSet() }
     val viewedListings by searchHistoryViewModel.viewed.collectAsStateWithLifecycle()
     val viewedKeys = remember(viewedListings) { viewedListings.map { it.bookmarkKey() }.toSet() }
-    val filterScrollState = rememberSaveable(saver = ScrollState.Saver) { ScrollState(0) }
     var showSukebeiWarning by remember { mutableStateOf(false) }
     var selecting by remember { mutableStateOf(false) }
     var selectedKeys by remember { mutableStateOf(setOf<String>()) }
@@ -203,9 +192,14 @@ fun SearchScreen(
         }
     }
 
-    val searchIdentity = "${uiState.searchParams.site.id}|${uiState.searchParams.query}|${uiState.searchParams.category.value}|${uiState.searchParams.filter.value}|${uiState.searchParams.sortField.value}|${uiState.searchParams.sortOrder.value}"
+    val hideKey = prefs.hideRules().joinToString("\n")
+    val local = uiState.localFilter
+    val searchIdentity = "${uiState.searchParams.site.id}|${uiState.searchParams.query}|${uiState.searchParams.category.value}|${uiState.searchParams.filter.value}|${uiState.searchParams.sortField.value}|${uiState.searchParams.sortOrder.value}|${local.resolution}|${local.codec}|${local.minSeeders}|${local.hideBatches}|$hideKey"
     LaunchedEffect(searchIdentity) {
         listState.scrollToItem(0)
+    }
+    LaunchedEffect(hideKey) {
+        viewModel.reapplyFilters()
     }
 
     Scaffold(
@@ -298,23 +292,6 @@ fun SearchScreen(
                             )
                         }
                     }
-                    Surface(shape = CircleShape, color = MaterialTheme.colorScheme.surfaceContainerHigh) {
-                        IconButton(onClick = { showFilterSheet = true }) {
-                            BadgedBox(
-                                badge = {
-                                    if (uiState.searchParams.hasActiveFilters()) {
-                                        Badge()
-                                    }
-                                }
-                            ) {
-                                Icon(
-                                    Icons.Default.FilterList,
-                                    contentDescription = "Filter",
-                                    tint = MaterialTheme.colorScheme.primary
-                                )
-                            }
-                        }
-                    }
                 }
                 if (prefs.sukebeiEnabled) {
                     Spacer(Modifier.height(8.dp))
@@ -335,6 +312,17 @@ fun SearchScreen(
                         }
                     }
                 }
+                CompactFilterBar(
+                    searchParams = uiState.searchParams,
+                    localFilter = uiState.localFilter,
+                    defaults = prefs.defaultSearchParams(uiState.searchParams.site),
+                    defaultLocal = prefs.defaultLocalFilter(),
+                    onCategory = viewModel::setCategory,
+                    onFilter = viewModel::setFilter,
+                    onSort = viewModel::setSort,
+                    onLocalFilter = viewModel::setLocalFilter,
+                    onReset = viewModel::resetFilters
+                )
             }
         },
         snackbarHost = { SnackbarHost(snackbarHostState) },
@@ -396,6 +384,7 @@ fun SearchScreen(
                 onOpenSettings = onOpenSettings,
                 onRefresh = viewModel::refresh,
                 onLoadMore = viewModel::loadNextPage,
+                onResetFilters = viewModel::resetFilters,
                 onMagnet = { torrent ->
                     val error = openMagnet(context, torrent.resolvedMagnet(), prefs.preferredTorrentPackage)
                     if (error != null) scope.launch { snackbarHostState.showSnackbar(error) }
@@ -427,35 +416,6 @@ fun SearchScreen(
                 modifier = Modifier
                     .weight(1f)
                     .fillMaxWidth()
-            )
-        }
-    }
-
-    if (showFilterSheet) {
-        ModalBottomSheet(
-            onDismissRequest = { showFilterSheet = false },
-            sheetState = sheetState,
-            dragHandle = { BottomSheetDefaults.DragHandle() },
-            containerColor = MaterialTheme.colorScheme.surfaceContainerLow,
-            shape = RoundedCornerShape(topStart = 28.dp, topEnd = 28.dp)
-        ) {
-            FilterBottomSheetContent(
-                searchParams = uiState.searchParams,
-                scrollState = filterScrollState,
-                categories = uiState.searchParams.site.categories,
-                defaultCategory = prefs.defaultCategory(uiState.searchParams.site),
-                defaultSortField = com.nyaa.aniyaa.data.model.sortFieldByValue(prefs.defaultSortFieldValue(uiState.searchParams.site)),
-                defaultSortOrder = com.nyaa.aniyaa.data.model.sortOrderByValue(prefs.defaultSortOrderValue(uiState.searchParams.site)),
-                onReset = viewModel::resetFilters,
-                onSaveSearch = {
-                    showFilterSheet = false
-                    showSaveDialog = true
-                },
-                onApply = { category, filter, sortField, sortOrder ->
-                    viewModel.applyFilters(category, filter, sortField, sortOrder)
-                    scope.launch { sheetState.hide() }
-                        .invokeOnCompletion { showFilterSheet = false }
-                }
             )
         }
     }
@@ -567,6 +527,7 @@ private fun SearchResultsBody(
     onOpenSettings: () -> Unit = {},
     onRefresh: () -> Unit,
     onLoadMore: () -> Unit,
+    onResetFilters: () -> Unit = {},
     onMagnet: (Torrent) -> Unit,
     onToggleBookmark: (Torrent) -> Unit,
     onCopyMagnet: (Torrent) -> Unit,
@@ -618,6 +579,40 @@ private fun SearchResultsBody(
                     Button(onClick = onRetry) { Text("Retry") }
                     Spacer(Modifier.height(8.dp))
                     OutlinedButton(onClick = onOpenSettings) { Text("Try a mirror") }
+                }
+            }
+            uiState.torrents.isEmpty() && uiState.hasSearched && uiState.hiddenCount > 0 -> {
+                Column(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .padding(bottom = bottomPadding)
+                        .padding(horizontal = 32.dp),
+                    verticalArrangement = Arrangement.Center,
+                    horizontalAlignment = Alignment.CenterHorizontally
+                ) {
+                    Text(
+                        text = "Nothing matches these filters",
+                        style = MaterialTheme.typography.titleMedium,
+                        color = MaterialTheme.colorScheme.onSurface,
+                        fontWeight = FontWeight.SemiBold,
+                        textAlign = TextAlign.Center
+                    )
+                    Spacer(Modifier.height(8.dp))
+                    Text(
+                        text = "${uiState.hiddenCount} loaded listing${if (uiState.hiddenCount == 1) "" else "s"} hidden",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        textAlign = TextAlign.Center
+                    )
+                    if (uiState.isLoadingMore) {
+                        Spacer(Modifier.height(16.dp))
+                        CircularProgressIndicator(modifier = Modifier.size(28.dp), strokeWidth = 2.5.dp)
+                    } else if (uiState.canLoadMore) {
+                        Spacer(Modifier.height(16.dp))
+                        Button(onClick = onLoadMore) { Text("Check more pages") }
+                    }
+                    Spacer(Modifier.height(8.dp))
+                    TextButton(onClick = onResetFilters) { Text("Reset filters") }
                 }
             }
             uiState.torrents.isEmpty() && uiState.hasSearched -> {
@@ -674,6 +669,15 @@ private fun SearchResultsBody(
                         bottom = 8.dp + bottomPadding
                     )
                 ) {
+                    if (uiState.hiddenCount > 0) {
+                        item(key = "hidden-count", contentType = "note") {
+                            Text(
+                                text = "${uiState.hiddenCount} hidden",
+                                style = MaterialTheme.typography.labelMedium,
+                                color = MaterialTheme.colorScheme.outline
+                            )
+                        }
+                    }
                     itemsIndexed(
                         items = uiState.torrents,
                         key = { index, torrent -> torrent.listKey(index) },
@@ -717,202 +721,148 @@ private fun SearchResultsBody(
     }
 }
 
-@OptIn(ExperimentalLayoutApi::class, ExperimentalMaterial3Api::class)
-@Composable
-fun FilterBottomSheetContent(
-    searchParams: SearchParams,
-    scrollState: ScrollState = rememberScrollState(),
-    categories: List<Category> = searchParams.site.categories,
-    defaultCategory: Category = categories.first(),
-    defaultSortField: SortField = SortField.DATE,
-    defaultSortOrder: SortOrder = SortOrder.DESC,
-    onReset: () -> Unit,
-    onSaveSearch: () -> Unit = {},
-    onApply: (Category, FilterOption, SortField, SortOrder) -> Unit
-) {
-    var tempCategory by remember(key1 = searchParams) { mutableStateOf(searchParams.category) }
-    var tempFilter by remember(key1 = searchParams) { mutableStateOf(searchParams.filter) }
-    var tempSortField by remember(key1 = searchParams) { mutableStateOf(searchParams.sortField) }
-    var tempSortOrder by remember(key1 = searchParams) { mutableStateOf(searchParams.sortOrder) }
-    var categoryExpanded by remember { mutableStateOf(false) }
-    val maxSheetHeight = (LocalConfiguration.current.screenHeightDp - 72).coerceAtLeast(320).dp
+private enum class OpenMenu { Category, Quality, Codec, Seeds, Sort }
 
-    Column(
+@Composable
+private fun CompactFilterBar(
+    searchParams: SearchParams,
+    localFilter: LocalFilter,
+    defaults: SearchParams,
+    defaultLocal: LocalFilter,
+    onCategory: (Category) -> Unit,
+    onFilter: (FilterOption) -> Unit,
+    onSort: (SortField, SortOrder) -> Unit,
+    onLocalFilter: (LocalFilter) -> Unit,
+    onReset: () -> Unit
+) {
+    val dirty = searchParams.category != defaults.category ||
+        searchParams.filter != defaults.filter ||
+        searchParams.sortField != defaults.sortField ||
+        searchParams.sortOrder != defaults.sortOrder ||
+        localFilter != defaultLocal
+    var openMenu by remember { mutableStateOf<OpenMenu?>(null) }
+    Row(
         modifier = Modifier
             .fillMaxWidth()
-            .heightIn(max = maxSheetHeight)
-            .navigationBarsPadding()
+            .horizontalScroll(rememberScrollState())
+            .padding(start = 12.dp, end = 12.dp, top = 6.dp, bottom = 6.dp),
+        horizontalArrangement = Arrangement.spacedBy(6.dp),
+        verticalAlignment = Alignment.CenterVertically
     ) {
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .weight(1f, fill = false)
-                .verticalScroll(scrollState)
-                .padding(horizontal = 24.dp)
+        MenuChip(
+            label = searchParams.category.compactLabel(),
+            selected = searchParams.category != defaults.category,
+            expanded = openMenu == OpenMenu.Category,
+            onExpand = { openMenu = if (openMenu == OpenMenu.Category) null else OpenMenu.Category },
+            onDismiss = { openMenu = null }
         ) {
-        Text(
-            text = "Search Filters",
-            style = MaterialTheme.typography.headlineSmall,
-            fontWeight = FontWeight.Bold,
-            modifier = Modifier.padding(bottom = 8.dp)
-        )
-        Text(
-            text = "Tip: user:Name finds that uploader’s listings",
-            style = MaterialTheme.typography.labelSmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-            modifier = Modifier.padding(bottom = 16.dp)
-        )
-        Text(
-            text = "CATEGORY",
-            style = MaterialTheme.typography.labelMedium,
-            color = MaterialTheme.colorScheme.primary,
-            fontWeight = FontWeight.Bold,
-            modifier = Modifier.padding(bottom = 8.dp)
-        )
-        FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            categories.filter { it.isPrimary }.forEach { category ->
-                FilterChip(
-                    selected = category.groups(tempCategory),
-                    onClick = { tempCategory = category },
-                    label = { Text(category.shortLabel) },
-                    shape = RoundedCornerShape(12.dp),
-                    colors = FilterChipDefaults.filterChipColors(
-                        selectedContainerColor = MaterialTheme.colorScheme.primaryContainer,
-                        selectedLabelColor = MaterialTheme.colorScheme.onPrimaryContainer
-                    )
+            searchParams.site.categories.forEach { category ->
+                DropdownMenuItem(
+                    text = { Text(category.displayName, maxLines = 1, overflow = TextOverflow.Ellipsis) },
+                    onClick = {
+                        openMenu = null
+                        onCategory(category)
+                    }
                 )
             }
-            val moreCategories = categories.filter { !it.isPrimary }
-            if (moreCategories.isNotEmpty()) {
-                Box {
-                    FilterChip(
-                        selected = moreCategories.any { it.value == tempCategory.value },
-                        onClick = { categoryExpanded = true },
-                        label = { Text("More") },
-                        shape = RoundedCornerShape(12.dp)
-                    )
-                    DropdownMenu(
-                        expanded = categoryExpanded,
-                        onDismissRequest = { categoryExpanded = false }
-                    ) {
-                        moreCategories.forEach { category ->
-                            DropdownMenuItem(
-                                text = { Text(category.displayName) },
-                                onClick = {
-                                    tempCategory = category
-                                    categoryExpanded = false
-                                }
-                            )
+        }
+        TinyChip(
+            text = "Trusted",
+            selected = searchParams.filter == FilterOption.TRUSTED,
+            onClick = { onFilter(FilterOption.TRUSTED) }
+        )
+        TinyChip(
+            text = "No remakes",
+            selected = searchParams.filter == FilterOption.NO_REMAKES,
+            onClick = { onFilter(FilterOption.NO_REMAKES) }
+        )
+        MenuChip(
+            label = if (localFilter.resolution == ResolutionChoice.ANY) "Quality" else localFilter.resolution.label,
+            selected = localFilter.resolution != ResolutionChoice.ANY,
+            expanded = openMenu == OpenMenu.Quality,
+            onExpand = { openMenu = if (openMenu == OpenMenu.Quality) null else OpenMenu.Quality },
+            onDismiss = { openMenu = null }
+        ) {
+            ResolutionChoice.entries.forEach { choice ->
+                DropdownMenuItem(
+                    text = { Text(choice.label) },
+                    onClick = {
+                        openMenu = null
+                        onLocalFilter(localFilter.copy(resolution = choice))
+                    }
+                )
+            }
+        }
+        MenuChip(
+            label = if (localFilter.codec == CodecChoice.ANY) "Codec" else localFilter.codec.label,
+            selected = localFilter.codec != CodecChoice.ANY,
+            expanded = openMenu == OpenMenu.Codec,
+            onExpand = { openMenu = if (openMenu == OpenMenu.Codec) null else OpenMenu.Codec },
+            onDismiss = { openMenu = null }
+        ) {
+            CodecChoice.entries.forEach { choice ->
+                DropdownMenuItem(
+                    text = { Text(choice.label) },
+                    onClick = {
+                        openMenu = null
+                        onLocalFilter(localFilter.copy(codec = choice))
+                    }
+                )
+            }
+        }
+        MenuChip(
+            label = if (localFilter.minSeeders <= 0) "Seeds" else "${localFilter.minSeeders}+",
+            selected = localFilter.minSeeders > 0,
+            expanded = openMenu == OpenMenu.Seeds,
+            onExpand = { openMenu = if (openMenu == OpenMenu.Seeds) null else OpenMenu.Seeds },
+            onDismiss = { openMenu = null }
+        ) {
+            LocalFilter.SEED_CHOICES.forEach { value ->
+                DropdownMenuItem(
+                    text = { Text(if (value <= 0) "Any" else "$value+") },
+                    onClick = {
+                        openMenu = null
+                        onLocalFilter(localFilter.copy(minSeeders = value))
+                    }
+                )
+            }
+        }
+        TinyChip(
+            text = "No batch",
+            selected = localFilter.hideBatches,
+            onClick = { onLocalFilter(localFilter.copy(hideBatches = !localFilter.hideBatches)) }
+        )
+        MenuChip(
+            label = sortChipLabel(searchParams.sortField, searchParams.sortOrder),
+            selected = searchParams.sortField != defaults.sortField || searchParams.sortOrder != defaults.sortOrder,
+            expanded = openMenu == OpenMenu.Sort,
+            onExpand = { openMenu = if (openMenu == OpenMenu.Sort) null else OpenMenu.Sort },
+            onDismiss = { openMenu = null }
+        ) {
+            SortField.entries.forEach { field ->
+                val mark = if (field == searchParams.sortField) {
+                    if (searchParams.sortOrder == SortOrder.DESC) " \u2193" else " \u2191"
+                } else {
+                    ""
+                }
+                DropdownMenuItem(
+                    text = { Text(field.displayName + mark) },
+                    onClick = {
+                        openMenu = null
+                        if (field == searchParams.sortField) {
+                            val flipped = if (searchParams.sortOrder == SortOrder.DESC) SortOrder.ASC else SortOrder.DESC
+                            onSort(field, flipped)
+                        } else {
+                            onSort(field, searchParams.sortOrder)
                         }
                     }
-                }
-            }
-        }
-        Spacer(Modifier.height(20.dp))
-        Text(
-            text = "FILTER",
-            style = MaterialTheme.typography.labelMedium,
-            color = MaterialTheme.colorScheme.primary,
-            fontWeight = FontWeight.Bold,
-            modifier = Modifier.padding(bottom = 8.dp)
-        )
-        FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            FilterOption.entries.forEach { option ->
-                FilterChip(
-                    selected = tempFilter == option,
-                    onClick = { tempFilter = option },
-                    label = { Text(option.displayName) },
-                    shape = RoundedCornerShape(12.dp),
-                    colors = FilterChipDefaults.filterChipColors(
-                        selectedContainerColor = MaterialTheme.colorScheme.primaryContainer,
-                        selectedLabelColor = MaterialTheme.colorScheme.onPrimaryContainer
-                    )
                 )
             }
         }
-        Spacer(Modifier.height(20.dp))
-        Text(
-            text = "SORT BY",
-            style = MaterialTheme.typography.labelMedium,
-            color = MaterialTheme.colorScheme.primary,
-            fontWeight = FontWeight.Bold,
-            modifier = Modifier.padding(bottom = 8.dp)
-        )
-        FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            SortField.entries.forEach { field ->
-                FilterChip(
-                    selected = tempSortField == field,
-                    onClick = { tempSortField = field },
-                    label = { Text(field.displayName) },
-                    shape = RoundedCornerShape(12.dp),
-                    colors = FilterChipDefaults.filterChipColors(
-                        selectedContainerColor = MaterialTheme.colorScheme.primaryContainer,
-                        selectedLabelColor = MaterialTheme.colorScheme.onPrimaryContainer
-                    )
-                )
+        if (dirty) {
+            TextButton(onClick = onReset) {
+                Text("Reset", style = MaterialTheme.typography.labelLarge)
             }
-        }
-        Spacer(Modifier.height(20.dp))
-        Text(
-            text = "ORDER",
-            style = MaterialTheme.typography.labelMedium,
-            color = MaterialTheme.colorScheme.primary,
-            fontWeight = FontWeight.Bold,
-            modifier = Modifier.padding(bottom = 8.dp)
-        )
-        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            SortOrder.entries.forEach { order ->
-                FilterChip(
-                    selected = tempSortOrder == order,
-                    onClick = { tempSortOrder = order },
-                    label = {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Icon(
-                                imageVector = if (order == SortOrder.DESC) Icons.Default.ArrowDownward else Icons.Default.ArrowUpward,
-                                contentDescription = null,
-                                modifier = Modifier.size(14.dp)
-                            )
-                            Spacer(Modifier.width(4.dp))
-                            Text(order.displayName)
-                        }
-                    },
-                    shape = RoundedCornerShape(12.dp),
-                    colors = FilterChipDefaults.filterChipColors(
-                        selectedContainerColor = MaterialTheme.colorScheme.primaryContainer,
-                        selectedLabelColor = MaterialTheme.colorScheme.onPrimaryContainer
-                    )
-                )
-            }
-        }
-        Spacer(Modifier.height(16.dp))
-        TextButton(onClick = onSaveSearch) { Text("Save this search") }
-        Spacer(Modifier.height(8.dp))
-        }
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 24.dp)
-                .padding(top = 8.dp, bottom = 24.dp),
-            horizontalArrangement = Arrangement.spacedBy(12.dp)
-        ) {
-            TextButton(
-                onClick = {
-                    tempCategory = defaultCategory
-                    tempFilter = FilterOption.ALL
-                    tempSortField = defaultSortField
-                    tempSortOrder = defaultSortOrder
-                    onReset()
-                },
-                modifier = Modifier.weight(1f)
-            ) { Text("Reset", fontWeight = FontWeight.SemiBold) }
-            Button(
-                onClick = {
-                    onApply(tempCategory, tempFilter, tempSortField, tempSortOrder)
-                },
-                modifier = Modifier.weight(1f),
-                shape = RoundedCornerShape(12.dp),
-                colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary)
-            ) { Text("Apply & Search", fontWeight = FontWeight.SemiBold) }
         }
     }
 }

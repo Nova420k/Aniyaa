@@ -10,11 +10,14 @@ import com.nyaa.aniyaa.data.model.SortField
 import com.nyaa.aniyaa.data.model.SortOrder
 import com.nyaa.aniyaa.data.model.categoryByValue
 import com.nyaa.aniyaa.data.model.darkModeByValue
-import com.nyaa.aniyaa.data.model.filterByValue
 import com.nyaa.aniyaa.data.model.sortFieldByValue
 import com.nyaa.aniyaa.data.model.sortOrderByValue
 import android.os.SystemClock
 import com.nyaa.aniyaa.data.network.SiteConfig
+import com.nyaa.aniyaa.util.CodecChoice
+import com.nyaa.aniyaa.util.LocalFilter
+import com.nyaa.aniyaa.util.ResolutionChoice
+import com.nyaa.aniyaa.util.ResultFilter
 import java.security.SecureRandom
 
 class AppPreferences(context: Context) {
@@ -156,37 +159,69 @@ class AppPreferences(context: Context) {
         prefs.edit().putString(siteKey(KEY_DEFAULT_SORT_ORDER, site), value).apply()
     }
 
-    fun lastCategoryValue(site: CatalogSite): String =
-        prefs.getString(siteKey(KEY_LAST_CATEGORY, site), defaultCategoryValue(site)).orEmpty()
-
-    fun lastFilterValue(site: CatalogSite): Int =
-        prefs.getInt(siteKey(KEY_LAST_FILTER, site), FilterOption.ALL.value)
-
-    fun lastSortFieldValue(site: CatalogSite): String =
-        prefs.getString(siteKey(KEY_LAST_SORT_FIELD, site), defaultSortFieldValue(site)).orEmpty()
-
-    fun lastSortOrderValue(site: CatalogSite): String =
-        prefs.getString(siteKey(KEY_LAST_SORT_ORDER, site), defaultSortOrderValue(site)).orEmpty()
-
     fun defaultCategory(site: CatalogSite = currentSite): Category =
         categoryByValue(defaultCategoryValue(site), site)
 
     fun defaultSearchParams(site: CatalogSite = currentSite): SearchParams = SearchParams(
         site = site,
-        category = categoryByValue(lastCategoryValue(site).ifBlank { defaultCategoryValue(site) }, site),
-        filter = filterByValue(lastFilterValue(site)),
-        sortField = sortFieldByValue(lastSortFieldValue(site).ifBlank { defaultSortFieldValue(site) }),
-        sortOrder = sortOrderByValue(lastSortOrderValue(site).ifBlank { defaultSortOrderValue(site) })
+        category = defaultCategory(site),
+        filter = FilterOption.ALL,
+        sortField = sortFieldByValue(defaultSortFieldValue(site)),
+        sortOrder = sortOrderByValue(defaultSortOrderValue(site))
     ).withValidCategory()
 
-    fun persistFilters(params: SearchParams) {
-        val site = params.site
-        prefs.edit()
-            .putString(siteKey(KEY_LAST_CATEGORY, site), params.category.value)
-            .putInt(siteKey(KEY_LAST_FILTER, site), params.filter.value)
-            .putString(siteKey(KEY_LAST_SORT_FIELD, site), params.sortField.value)
-            .putString(siteKey(KEY_LAST_SORT_ORDER, site), params.sortOrder.value)
-            .apply()
+    var defaultResolutionTag: String
+        get() = ResolutionChoice.fromTag(prefs.getString(KEY_DEFAULT_RESOLUTION, "").orEmpty()).tag
+        set(value) = prefs.edit().putString(KEY_DEFAULT_RESOLUTION, ResolutionChoice.fromTag(value).tag).apply()
+
+    var defaultCodecTag: String
+        get() = CodecChoice.fromTag(prefs.getString(KEY_DEFAULT_CODEC, "").orEmpty()).tag
+        set(value) = prefs.edit().putString(KEY_DEFAULT_CODEC, CodecChoice.fromTag(value).tag).apply()
+
+    var defaultMinSeeders: Int
+        get() = LocalFilter.coerceSeeders(prefs.getInt(KEY_DEFAULT_MIN_SEEDERS, 0))
+        set(value) = prefs.edit().putInt(KEY_DEFAULT_MIN_SEEDERS, LocalFilter.coerceSeeders(value)).apply()
+
+    var defaultHideBatches: Boolean
+        get() = prefs.getBoolean(KEY_DEFAULT_HIDE_BATCHES, false)
+        set(value) = prefs.edit().putBoolean(KEY_DEFAULT_HIDE_BATCHES, value).apply()
+
+    fun defaultLocalFilter(): LocalFilter = LocalFilter(
+        resolution = ResolutionChoice.fromTag(defaultResolutionTag),
+        codec = CodecChoice.fromTag(defaultCodecTag),
+        minSeeders = defaultMinSeeders,
+        hideBatches = defaultHideBatches
+    )
+
+    fun hideRules(): List<String> =
+        prefs.getString(KEY_HIDE_RULES, "").orEmpty()
+            .split('\n')
+            .map { it.trim() }
+            .filter { it.isNotEmpty() }
+
+    fun defaultResultFilter(): ResultFilter = defaultLocalFilter().toResultFilter(hideRules())
+
+    fun addHideRule(raw: String): String? {
+        val rule = raw.trim().replace(Regex("\\s+"), " ").take(MAX_HIDE_RULE_LENGTH)
+        if (rule.length < 2) return "Use at least 2 characters"
+        val current = hideRules()
+        if (current.any { it.equals(rule, ignoreCase = true) }) return "Already hidden"
+        if (current.size >= MAX_HIDE_RULES) return "You can hide up to $MAX_HIDE_RULES phrases"
+        prefs.edit().putString(KEY_HIDE_RULES, (current + rule).joinToString("\n")).apply()
+        return null
+    }
+
+    fun removeHideRule(rule: String) {
+        val next = hideRules().filterNot { it.equals(rule, ignoreCase = true) }
+        prefs.edit().putString(KEY_HIDE_RULES, next.joinToString("\n")).apply()
+    }
+
+    fun setHideRules(rules: List<String>) {
+        val cleaned = rules.map { it.trim().replace(Regex("\\s+"), " ") }
+            .filter { it.length >= 2 }
+            .distinctBy { it.lowercase() }
+            .take(MAX_HIDE_RULES)
+        prefs.edit().putString(KEY_HIDE_RULES, cleaned.joinToString("\n")).apply()
     }
 
     fun applyToSiteConfig() {
@@ -264,10 +299,13 @@ class AppPreferences(context: Context) {
         private const val KEY_DEFAULT_CATEGORY = "default_category"
         private const val KEY_DEFAULT_SORT_FIELD = "default_sort_field"
         private const val KEY_DEFAULT_SORT_ORDER = "default_sort_order"
-        private const val KEY_LAST_CATEGORY = "last_category"
-        private const val KEY_LAST_FILTER = "last_filter"
-        private const val KEY_LAST_SORT_FIELD = "last_sort_field"
-        private const val KEY_LAST_SORT_ORDER = "last_sort_order"
+        private const val KEY_DEFAULT_RESOLUTION = "default_resolution"
+        private const val KEY_DEFAULT_CODEC = "default_codec"
+        private const val KEY_DEFAULT_MIN_SEEDERS = "default_min_seeders"
+        private const val KEY_DEFAULT_HIDE_BATCHES = "default_hide_batches"
+        private const val KEY_HIDE_RULES = "hide_rules"
+        const val MAX_HIDE_RULES = 50
+        const val MAX_HIDE_RULE_LENGTH = 64
         private const val KEY_TORRENT_PACKAGE = "torrent_package"
         private const val KEY_LOCK_ENABLED = "lock_enabled"
         private const val KEY_HIDE_SCREENSHOTS = "hide_screenshots"

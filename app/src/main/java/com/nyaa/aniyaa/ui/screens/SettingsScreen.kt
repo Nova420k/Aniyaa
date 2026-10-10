@@ -27,13 +27,17 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Palette
 import androidx.compose.material.icons.outlined.Wallpaper
@@ -41,10 +45,13 @@ import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.InputChip
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
@@ -70,6 +77,8 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.Dp
@@ -80,6 +89,12 @@ import com.nyaa.aniyaa.data.model.CatalogSite
 import com.nyaa.aniyaa.data.model.DarkMode
 import com.nyaa.aniyaa.data.model.SortField
 import com.nyaa.aniyaa.data.model.SortOrder
+import com.nyaa.aniyaa.data.model.categoryByValue
+import com.nyaa.aniyaa.data.model.sortFieldByValue
+import com.nyaa.aniyaa.data.model.sortOrderByValue
+import com.nyaa.aniyaa.util.CodecChoice
+import com.nyaa.aniyaa.util.LocalFilter
+import com.nyaa.aniyaa.util.ResolutionChoice
 import com.nyaa.aniyaa.ui.theme.APP_THEMES
 import com.nyaa.aniyaa.ui.theme.AppTheme
 import com.nyaa.aniyaa.ui.theme.rememberThemeSwatch
@@ -118,6 +133,12 @@ fun SettingsScreen(
     var defaultCategory by remember { mutableStateOf(prefs.defaultCategoryValue(currentSite)) }
     var defaultSort by remember { mutableStateOf(prefs.defaultSortFieldValue(currentSite)) }
     var defaultOrder by remember { mutableStateOf(prefs.defaultSortOrderValue(currentSite)) }
+    var defaultResolution by remember { mutableStateOf(prefs.defaultResolutionTag) }
+    var defaultCodec by remember { mutableStateOf(prefs.defaultCodecTag) }
+    var defaultMinSeeders by remember { mutableStateOf(prefs.defaultMinSeeders) }
+    var defaultHideBatches by remember { mutableStateOf(prefs.defaultHideBatches) }
+    var hideRules by remember { mutableStateOf(prefs.hideRules()) }
+    var hideDraft by remember { mutableStateOf("") }
     var torrentPackage by remember { mutableStateOf(prefs.preferredTorrentPackage) }
     var showPinDialog by remember { mutableStateOf(false) }
     var pinValue by remember { mutableStateOf("") }
@@ -307,62 +328,109 @@ fun SettingsScreen(
                 }
             }
             Spacer(Modifier.height(8.dp))
-            Text("These defaults apply when you reset filters for ${currentSite.displayName}.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.outline)
+            Text(
+                "Opening Aniyaa uses this row. Alerts use it too.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.outline
+            )
             Spacer(Modifier.height(8.dp))
-            if (sukebeiEnabled) {
-                FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    CatalogSite.entries.forEach { site ->
-                        FilterChip(
-                            selected = currentSite == site,
-                            onClick = {
-                                currentSite = site
-                                defaultCategory = prefs.defaultCategoryValue(site)
-                                defaultSort = prefs.defaultSortFieldValue(site)
-                                defaultOrder = prefs.defaultSortOrderValue(site)
-                            },
-                            label = { Text(if (site.nsfw) "${site.displayName} 18+" else site.displayName) }
-                        )
+            DefaultFilterRow(
+                site = currentSite,
+                sukebeiEnabled = sukebeiEnabled,
+                categoryValue = defaultCategory,
+                sortFieldValue = defaultSort,
+                sortOrderValue = defaultOrder,
+                resolutionTag = defaultResolution,
+                codecTag = defaultCodec,
+                minSeeders = defaultMinSeeders,
+                hideBatches = defaultHideBatches,
+                onSite = { site ->
+                    settingsViewModel.setCurrentSite(site)
+                    currentSite = site
+                    defaultCategory = prefs.defaultCategoryValue(site)
+                    defaultSort = prefs.defaultSortFieldValue(site)
+                    defaultOrder = prefs.defaultSortOrderValue(site)
+                },
+                onCategory = { value ->
+                    defaultCategory = value
+                    settingsViewModel.setDefaultCategory(value, currentSite)
+                },
+                onSort = { field, order ->
+                    defaultSort = field
+                    defaultOrder = order
+                    settingsViewModel.setDefaultSortField(field, currentSite)
+                    settingsViewModel.setDefaultSortOrder(order, currentSite)
+                },
+                onResolution = { tag ->
+                    defaultResolution = tag
+                    settingsViewModel.setDefaultResolution(tag)
+                },
+                onCodec = { tag ->
+                    defaultCodec = tag
+                    settingsViewModel.setDefaultCodec(tag)
+                },
+                onMinSeeders = { value ->
+                    defaultMinSeeders = value
+                    settingsViewModel.setDefaultMinSeeders(value)
+                },
+                onHideBatches = { enabled ->
+                    defaultHideBatches = enabled
+                    settingsViewModel.setDefaultHideBatches(enabled)
+                }
+            )
+
+            Spacer(Modifier.height(28.dp))
+            SectionLabel("Hide rules")
+            Text(
+                "Listings whose title, uploader, or release group contains one of these are hidden in search and alerts.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.outline
+            )
+            Spacer(Modifier.height(8.dp))
+            OutlinedTextField(
+                value = hideDraft,
+                onValueChange = { hideDraft = it },
+                label = { Text("Hide if it contains") },
+                singleLine = true,
+                modifier = Modifier.fillMaxWidth(),
+                keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
+                keyboardActions = KeyboardActions(onDone = {
+                    val draft = hideDraft.trim()
+                    if (draft.length < 2) return@KeyboardActions
+                    settingsViewModel.addHideRule(draft)
+                    hideRules = prefs.hideRules()
+                    if (hideRules.any { it.equals(draft, ignoreCase = true) }) hideDraft = ""
+                }),
+                trailingIcon = {
+                    IconButton(
+                        onClick = {
+                            val draft = hideDraft.trim()
+                            settingsViewModel.addHideRule(draft)
+                            hideRules = prefs.hideRules()
+                            if (hideRules.any { it.equals(draft, ignoreCase = true) }) hideDraft = ""
+                        },
+                        enabled = hideDraft.trim().length >= 2
+                    ) {
+                        Icon(Icons.Default.Add, contentDescription = "Add hide rule")
                     }
                 }
-            }
-            Spacer(Modifier.height(8.dp))
-            Spacer(Modifier.height(8.dp))
-            FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                currentSite.categories.forEach { category ->
-                    FilterChip(
-                        selected = defaultCategory == category.value,
-                        onClick = {
-                            defaultCategory = category.value
-                            settingsViewModel.setDefaultCategory(category.value, currentSite)
-                        },
-                        label = { Text(category.displayName) }
-                    )
-                }
-            }
-            Spacer(Modifier.height(8.dp))
-            FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                SortField.entries.forEach { field ->
-                    FilterChip(
-                        selected = defaultSort == field.value,
-                        onClick = {
-                            defaultSort = field.value
-                            settingsViewModel.setDefaultSortField(field.value, currentSite)
-                        },
-                        label = { Text(field.displayName) }
-                    )
-                }
-            }
-            Spacer(Modifier.height(8.dp))
-            FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                SortOrder.entries.forEach { order ->
-                    FilterChip(
-                        selected = defaultOrder == order.value,
-                        onClick = {
-                            defaultOrder = order.value
-                            settingsViewModel.setDefaultSortOrder(order.value, currentSite)
-                        },
-                        label = { Text(order.displayName) }
-                    )
+            )
+            if (hideRules.isNotEmpty()) {
+                Spacer(Modifier.height(8.dp))
+                FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    hideRules.forEach { rule ->
+                        InputChip(
+                            selected = true,
+                            onClick = {
+                                settingsViewModel.removeHideRule(rule)
+                                hideRules = prefs.hideRules()
+                            },
+                            label = { Text(rule) },
+                            trailingIcon = {
+                                Icon(Icons.Default.Close, contentDescription = "Remove $rule", modifier = Modifier.size(16.dp))
+                            }
+                        )
+                    }
                 }
             }
 
@@ -683,6 +751,7 @@ fun SettingsScreen(
                 TextButton(
                     onClick = {
                         settingsViewModel.acknowledgeSukebei()
+                        settingsViewModel.setCurrentSite(CatalogSite.SUKEBEI)
                         sukebeiEnabled = true
                         currentSite = CatalogSite.SUKEBEI
                         defaultCategory = prefs.defaultCategoryValue(CatalogSite.SUKEBEI)
@@ -760,6 +829,163 @@ private fun SectionLabel(text: String) {
             modifier = Modifier.size(20.dp)
         )
         Text(text = text, style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
+    }
+}
+
+private enum class DefaultFilterMenu { Catalog, Category, Quality, Codec, Seeds, Sort }
+
+@Composable
+private fun DefaultFilterRow(
+    site: CatalogSite,
+    sukebeiEnabled: Boolean,
+    categoryValue: String,
+    sortFieldValue: String,
+    sortOrderValue: String,
+    resolutionTag: String,
+    codecTag: String,
+    minSeeders: Int,
+    hideBatches: Boolean,
+    onSite: (CatalogSite) -> Unit,
+    onCategory: (String) -> Unit,
+    onSort: (String, String) -> Unit,
+    onResolution: (String) -> Unit,
+    onCodec: (String) -> Unit,
+    onMinSeeders: (Int) -> Unit,
+    onHideBatches: (Boolean) -> Unit
+) {
+    val category = categoryByValue(categoryValue, site)
+    val sortField = sortFieldByValue(sortFieldValue)
+    val sortOrder = sortOrderByValue(sortOrderValue)
+    val resolution = ResolutionChoice.fromTag(resolutionTag)
+    val codec = CodecChoice.fromTag(codecTag)
+    var openMenu by remember { mutableStateOf<DefaultFilterMenu?>(null) }
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .horizontalScroll(rememberScrollState())
+            .padding(vertical = 2.dp),
+        horizontalArrangement = Arrangement.spacedBy(6.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        if (sukebeiEnabled) {
+            MenuChip(
+                label = if (site.nsfw) "Sukebei" else "Nyaa",
+                selected = site.nsfw,
+                expanded = openMenu == DefaultFilterMenu.Catalog,
+                onExpand = { openMenu = if (openMenu == DefaultFilterMenu.Catalog) null else DefaultFilterMenu.Catalog },
+                onDismiss = { openMenu = null }
+            ) {
+                CatalogSite.entries.forEach { option ->
+                    DropdownMenuItem(
+                        text = { Text(if (option.nsfw) "Sukebei 18+" else option.displayName) },
+                        onClick = {
+                            openMenu = null
+                            onSite(option)
+                        }
+                    )
+                }
+            }
+        }
+        MenuChip(
+            label = category.compactLabel(),
+            selected = category.value != "0_0",
+            expanded = openMenu == DefaultFilterMenu.Category,
+            onExpand = { openMenu = if (openMenu == DefaultFilterMenu.Category) null else DefaultFilterMenu.Category },
+            onDismiss = { openMenu = null }
+        ) {
+            site.categories.forEach { option ->
+                DropdownMenuItem(
+                    text = { Text(option.displayName, maxLines = 1, overflow = TextOverflow.Ellipsis) },
+                    onClick = {
+                        openMenu = null
+                        onCategory(option.value)
+                    }
+                )
+            }
+        }
+        MenuChip(
+            label = if (resolution == ResolutionChoice.ANY) "Quality" else resolution.label,
+            selected = resolution != ResolutionChoice.ANY,
+            expanded = openMenu == DefaultFilterMenu.Quality,
+            onExpand = { openMenu = if (openMenu == DefaultFilterMenu.Quality) null else DefaultFilterMenu.Quality },
+            onDismiss = { openMenu = null }
+        ) {
+            ResolutionChoice.entries.forEach { choice ->
+                DropdownMenuItem(
+                    text = { Text(choice.label) },
+                    onClick = {
+                        openMenu = null
+                        onResolution(choice.tag)
+                    }
+                )
+            }
+        }
+        MenuChip(
+            label = if (codec == CodecChoice.ANY) "Codec" else codec.label,
+            selected = codec != CodecChoice.ANY,
+            expanded = openMenu == DefaultFilterMenu.Codec,
+            onExpand = { openMenu = if (openMenu == DefaultFilterMenu.Codec) null else DefaultFilterMenu.Codec },
+            onDismiss = { openMenu = null }
+        ) {
+            CodecChoice.entries.forEach { choice ->
+                DropdownMenuItem(
+                    text = { Text(choice.label) },
+                    onClick = {
+                        openMenu = null
+                        onCodec(choice.tag)
+                    }
+                )
+            }
+        }
+        MenuChip(
+            label = if (minSeeders <= 0) "Seeds" else "$minSeeders+",
+            selected = minSeeders > 0,
+            expanded = openMenu == DefaultFilterMenu.Seeds,
+            onExpand = { openMenu = if (openMenu == DefaultFilterMenu.Seeds) null else DefaultFilterMenu.Seeds },
+            onDismiss = { openMenu = null }
+        ) {
+            LocalFilter.SEED_CHOICES.forEach { value ->
+                DropdownMenuItem(
+                    text = { Text(if (value <= 0) "Any" else "$value+") },
+                    onClick = {
+                        openMenu = null
+                        onMinSeeders(value)
+                    }
+                )
+            }
+        }
+        TinyChip(
+            text = "No batch",
+            selected = hideBatches,
+            onClick = { onHideBatches(!hideBatches) }
+        )
+        MenuChip(
+            label = sortChipLabel(sortField, sortOrder),
+            selected = sortField != SortField.DATE || sortOrder != SortOrder.DESC,
+            expanded = openMenu == DefaultFilterMenu.Sort,
+            onExpand = { openMenu = if (openMenu == DefaultFilterMenu.Sort) null else DefaultFilterMenu.Sort },
+            onDismiss = { openMenu = null }
+        ) {
+            SortField.entries.forEach { field ->
+                val mark = if (field == sortField) {
+                    if (sortOrder == SortOrder.DESC) " \u2193" else " \u2191"
+                } else {
+                    ""
+                }
+                DropdownMenuItem(
+                    text = { Text(field.displayName + mark) },
+                    onClick = {
+                        openMenu = null
+                        if (field == sortField) {
+                            val flipped = if (sortOrder == SortOrder.DESC) SortOrder.ASC else SortOrder.DESC
+                            onSort(field.value, flipped.value)
+                        } else {
+                            onSort(field.value, sortOrder.value)
+                        }
+                    }
+                )
+            }
+        }
     }
 }
 

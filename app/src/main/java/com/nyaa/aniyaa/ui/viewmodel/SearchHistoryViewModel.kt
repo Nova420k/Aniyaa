@@ -8,6 +8,7 @@ import com.nyaa.aniyaa.data.model.SavedSearch
 import com.nyaa.aniyaa.data.model.SearchHistoryEntry
 import com.nyaa.aniyaa.data.model.SearchParams
 import com.nyaa.aniyaa.data.model.Torrent
+import com.nyaa.aniyaa.util.passes
 import com.nyaa.aniyaa.work.SavedSearchAlerts
 import com.nyaa.aniyaa.work.SavedSearchWorker
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -88,17 +89,18 @@ class SearchHistoryViewModel(application: Application) : AndroidViewModel(applic
                 return@launch
             }
             val ids = torrents.map { it.id }.filter { it.isNotBlank() }
-            val newIds = SavedSearchAlerts.newIds(ids, search.lastSeenIds)
+            val newIds = SavedSearchAlerts.newIds(ids, search.lastSeenIds).toSet()
+            val visibleNew = torrents.filter { it.id in newIds && it.passes(app.prefs.defaultResultFilter()) }
             savedSearchRepository.update(
                 search.copy(
                     lastSeenIds = SavedSearchAlerts.storeIds(ids),
                     lastCheckedAt = System.currentTimeMillis()
                 )
             )
-            _message.value = if (newIds.isEmpty()) {
+            _message.value = if (visibleNew.isEmpty()) {
                 "No new results for ${search.displayName()}"
             } else {
-                "${newIds.size} new listing${if (newIds.size == 1) "" else "s"} for ${search.displayName()}"
+                "${visibleNew.size} new listing${if (visibleNew.size == 1) "" else "s"} for ${search.displayName()}"
             }
         }
     }

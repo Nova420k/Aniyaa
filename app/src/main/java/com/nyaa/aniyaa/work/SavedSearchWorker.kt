@@ -24,6 +24,7 @@ import com.nyaa.aniyaa.data.db.AppDatabase
 import com.nyaa.aniyaa.data.model.Torrent
 import com.nyaa.aniyaa.data.repository.NyaaRepository
 import com.nyaa.aniyaa.data.repository.SavedSearchRepository
+import com.nyaa.aniyaa.util.passes
 import kotlinx.coroutines.delay
 import java.util.concurrent.TimeUnit
 
@@ -54,21 +55,22 @@ class SavedSearchWorker(
             }
             if (torrents.isEmpty()) return@forEach
             val ids = torrents.map { it.id }.filter { it.isNotBlank() }
-            val newIds = SavedSearchAlerts.newIds(ids, saved.lastSeenIds)
-            val newTitles = torrents.filter { it.id in newIds.toSet() }.map { it.title }
+            val newIds = SavedSearchAlerts.newIds(ids, saved.lastSeenIds).toSet()
+            val filter = (applicationContext as AniyaaApplication).prefs.defaultResultFilter()
+            val visibleNew = torrents.filter { it.id in newIds && it.passes(filter) }
             savedRepo.update(
                 saved.copy(
                     lastSeenIds = SavedSearchAlerts.storeIds(ids),
                     lastCheckedAt = System.currentTimeMillis()
                 )
             )
-            if (newIds.isNotEmpty()) {
+            if (visibleNew.isNotEmpty()) {
                 notifyNewResults(
                     applicationContext,
                     saved.id,
                     saved.displayName(),
-                    newIds.size,
-                    newTitles
+                    visibleNew.size,
+                    visibleNew.map { it.title }
                 )
             }
         }

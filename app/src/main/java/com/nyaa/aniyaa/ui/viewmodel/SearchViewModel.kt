@@ -13,12 +13,12 @@ import com.nyaa.aniyaa.data.model.SearchParams
 import com.nyaa.aniyaa.data.model.SortField
 import com.nyaa.aniyaa.data.model.SortOrder
 import com.nyaa.aniyaa.data.model.Torrent
-import com.nyaa.aniyaa.data.model.sortFieldByValue
-import com.nyaa.aniyaa.data.model.sortOrderByValue
 import com.nyaa.aniyaa.data.model.toSavedSearch
 import com.nyaa.aniyaa.data.network.SiteConfig
 import com.nyaa.aniyaa.data.network.toUserMessage
 import com.nyaa.aniyaa.data.repository.mergeSearchPages
+import com.nyaa.aniyaa.util.LocalFilter
+import com.nyaa.aniyaa.util.passes
 import com.nyaa.aniyaa.work.SavedSearchWorker
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Job
@@ -37,6 +37,8 @@ data class SearchUiState(
     val error: String? = null,
     val notice: String? = null,
     val searchParams: SearchParams = SearchParams(),
+    val localFilter: LocalFilter = LocalFilter(),
+    val hiddenCount: Int = 0,
     val hasSearched: Boolean = false
 )
 
@@ -51,7 +53,16 @@ class SearchViewModel(application: Application) : AndroidViewModel(application) 
     private val _query = MutableStateFlow("")
     val query: StateFlow<String> = _query.asStateFlow()
 
-    private val _uiState = MutableStateFlow(SearchUiState(searchParams = prefs.defaultSearchParams()))
+    private var localFilter: LocalFilter = prefs.defaultLocalFilter()
+    private var rawTorrents: List<Torrent> = emptyList()
+    private var autoLoadsRemaining: Int = 0
+
+    private val _uiState = MutableStateFlow(
+        SearchUiState(
+            searchParams = prefs.defaultSearchParams(),
+            localFilter = localFilter
+        )
+    )
     val uiState: StateFlow<SearchUiState> = _uiState.asStateFlow()
 
     private val _pendingNsfwParams = MutableStateFlow<SearchParams?>(null)
@@ -65,36 +76,47 @@ class SearchViewModel(application: Application) : AndroidViewModel(application) 
     init {
         if (!prefs.sukebeiEnabled && _uiState.value.searchParams.site.nsfw) {
             val nyaa = prefs.defaultSearchParams(CatalogSite.NYAA)
-            prefs.currentSite = CatalogSite.NYAA
             SiteConfig.currentSite = CatalogSite.NYAA
-            _uiState.update { it.copy(searchParams = nyaa) }
+            _uiState.update { it.copy(searchParams = nyaa, localFilter = localFilter) }
         }
         restoreFromCache()
     }
 
     private data class SiteSnapshot(
         val query: String,
-        val state: SearchUiState
+        val state: SearchUiState,
+        val raw: List<Torrent>
     )
 
     fun updateQuery(query: String) {
         _query.value = query
     }
 
-    fun updateCategory(category: Category) {
-        _uiState.update { it.copy(searchParams = it.searchParams.copy(category = category)) }
+    fun setCategory(category: Category) {
+        val current = _uiState.value.searchParams
+        if (current.category == category) return
+        applyFilters(category, current.filter, current.sortField, current.sortOrder)
     }
 
-    fun updateFilter(filter: FilterOption) {
-        _uiState.update { it.copy(searchParams = it.searchParams.copy(filter = filter)) }
+    fun setFilter(filter: FilterOption) {
+        val current = _uiState.value.searchParams
+        val next = if (current.filter == filter) FilterOption.ALL else filter
+        if (current.filter == next) return
+        applyFilters(current.category, next, current.sortField, current.sortOrder)
     }
 
-    fun updateSortField(sortField: SortField) {
-        _uiState.update { it.copy(searchParams = it.searchParams.copy(sortField = sortField)) }
+    fun setSort(sortField: SortField, sortOrder: SortOrder) {
+        val current = _uiState.value.searchParams
+        if (current.sortField == sortField && current.sortOrder == sortOrder) return
+        applyFilters(current.category, current.filter, sortField, sortOrder)
     }
 
-    fun updateSortOrder(sortOrder: SortOrder) {
-        _uiState.update { it.copy(searchParams = it.searchParams.copy(sortOrder = sortOrder)) }
+    fun setLocalFilter(filter: LocalFilter) {
+        if (localFilter == filter) return
+        localFilter = filter
+        autoLoadsRemaining = AUTO_LOAD_LIMIT
+        reapplyFilters()
+        maybeAutoLoad()
     }
 
     fun applyFilters(
@@ -121,25 +143,30 @@ class SearchViewModel(application: Application) : AndroidViewModel(application) 
         if (site.nsfw && !prefs.sukebeiEnabled) return
         val current = _uiState.value.searchParams.site
         if (current == site) return
-        siteSnapshots[current] = SiteSnapshot(_query.value, _uiState.value)
-        prefs.currentSite = site
+        siteSnapshots[current] = SiteSnapshot(_query.value, _uiState.value, rawTorrents)
         SiteConfig.currentSite = site
         val restored = siteSnapshots[site]
         if (restored != null) {
             _query.value = restored.query
+            rawTorrents = restored.raw
             _uiState.value = restored.state.copy(
-                searchParams = restored.state.searchParams.copy(site = site).withValidCategory()
+                searchParams = restored.state.searchParams.copy(site = site).withValidCategory(),
+                localFilter = localFilter
             )
+            reapplyFilters()
             if (restored.state.torrents.isEmpty() && (prefs.loadLatestOnStart || restored.query.isNotBlank())) {
                 search(recordHistory = false)
             }
             return
         }
         val defaults = prefs.defaultSearchParams(site).copy(query = _query.value)
+        rawTorrents = emptyList()
         _uiState.update {
             it.copy(
                 searchParams = defaults,
                 torrents = emptyList(),
+                hiddenCount = 0,
+                localFilter = localFilter,
                 hasSearched = false,
                 isLoading = false,
                 isRefreshing = false,
@@ -177,10 +204,9 @@ class SearchViewModel(application: Application) : AndroidViewModel(application) 
     private fun applyParamsConfirmed(valid: SearchParams, recordHistory: Boolean) {
         val current = _uiState.value.searchParams.site
         if (valid.site != current) {
-            siteSnapshots[current] = SiteSnapshot(_query.value, _uiState.value)
+            siteSnapshots[current] = SiteSnapshot(_query.value, _uiState.value, rawTorrents)
         }
-        if (valid.site != prefs.currentSite) {
-            prefs.currentSite = valid.site
+        if (valid.site != SiteConfig.currentSite) {
             SiteConfig.currentSite = valid.site
         }
         _query.value = valid.query
@@ -198,11 +224,39 @@ class SearchViewModel(application: Application) : AndroidViewModel(application) 
 
     fun resetFilters() {
         val site = _uiState.value.searchParams.site
+        val defaults = prefs.defaultSearchParams(site)
+        localFilter = prefs.defaultLocalFilter()
+        val current = _uiState.value.searchParams
+        val sameServer = current.category == defaults.category &&
+            current.filter == defaults.filter &&
+            current.sortField == defaults.sortField &&
+            current.sortOrder == defaults.sortOrder
+        if (sameServer) {
+            autoLoadsRemaining = AUTO_LOAD_LIMIT
+            reapplyFilters()
+            maybeAutoLoad()
+            return
+        }
         applyFilters(
-            category = prefs.defaultCategory(site),
-            filter = FilterOption.ALL,
-            sortField = sortFieldByValue(prefs.defaultSortFieldValue(site)),
-            sortOrder = sortOrderByValue(prefs.defaultSortOrderValue(site))
+            category = defaults.category,
+            filter = defaults.filter,
+            sortField = defaults.sortField,
+            sortOrder = defaults.sortOrder
+        )
+    }
+
+    fun reapplyFilters() {
+        val current = _uiState.value
+        publishRaw(
+            raw = rawTorrents,
+            params = current.searchParams,
+            canLoadMore = current.canLoadMore,
+            hasSearched = current.hasSearched,
+            isLoading = current.isLoading,
+            isRefreshing = current.isRefreshing,
+            isLoadingMore = current.isLoadingMore,
+            error = current.error,
+            notice = current.notice
         )
     }
 
@@ -213,18 +267,9 @@ class SearchViewModel(application: Application) : AndroidViewModel(application) 
                 .getOrNull()
                 ?.getOrNull()
                 .orEmpty()
+            if (requestGeneration != 0L) return@launch
             if (cached.isNotEmpty()) {
-                val (merged, canLoadMore) = mergeSearchPages(emptyList(), cached, replace = true)
-                _uiState.update {
-                    it.copy(
-                        torrents = merged,
-                        hasSearched = true,
-                        isLoading = false,
-                        canLoadMore = canLoadMore,
-                        searchParams = params,
-                        error = null
-                    )
-                }
+                acceptTorrents(cached, params, replace = true, notice = null, refreshingAfter = true)
             }
             if (prefs.loadLatestOnStart || cached.isNotEmpty() || params.query.isNotBlank()) {
                 search(recordHistory = false)
@@ -235,10 +280,10 @@ class SearchViewModel(application: Application) : AndroidViewModel(application) 
     fun search(recordHistory: Boolean = true, forceNetwork: Boolean = false) {
         loadMoreJob?.cancel()
         searchJob?.cancel()
+        autoLoadsRemaining = AUTO_LOAD_LIMIT
 
         val params = _uiState.value.searchParams.copy(query = _query.value, page = 1).withValidCategory()
         val generation = ++requestGeneration
-        prefs.persistFilters(params)
 
         val hadResults = _uiState.value.torrents.isNotEmpty() &&
             _uiState.value.searchParams.site == params.site
@@ -249,6 +294,7 @@ class SearchViewModel(application: Application) : AndroidViewModel(application) 
                 isLoadingMore = false,
                 error = null,
                 searchParams = params,
+                localFilter = localFilter,
                 canLoadMore = true
             )
         }
@@ -265,17 +311,7 @@ class SearchViewModel(application: Application) : AndroidViewModel(application) 
                 val cachedList = cached?.getOrNull().orEmpty()
                 if (generation != requestGeneration) return@launch
                 if (cachedList.isNotEmpty()) {
-                    val (merged, canLoadMore) = mergeSearchPages(emptyList(), cachedList, replace = true)
-                    _uiState.update {
-                        it.copy(
-                            isLoading = false,
-                            isRefreshing = true,
-                            torrents = merged,
-                            hasSearched = true,
-                            canLoadMore = canLoadMore,
-                            error = null
-                        )
-                    }
+                    acceptTorrents(cachedList, params, replace = true, notice = null, refreshingAfter = true)
                 }
             }
 
@@ -289,24 +325,10 @@ class SearchViewModel(application: Application) : AndroidViewModel(application) 
             if (generation != requestGeneration) return@launch
             result.fold(
                 onSuccess = { torrents ->
-                    val (merged, canLoadMore) = mergeSearchPages(emptyList(), torrents, replace = true)
                     val used = SiteConfig.resolvedBaseUrl(params.site)
                     val configured = prefs.baseUrl(params.site)
-                    _uiState.update {
-                        it.copy(
-                            isLoading = false,
-                            isRefreshing = false,
-                            torrents = merged,
-                            hasSearched = true,
-                            canLoadMore = canLoadMore,
-                            error = null,
-                            notice = if (!used.equals(configured, ignoreCase = true)) {
-                                "Using $used"
-                            } else {
-                                null
-                            }
-                        )
-                    }
+                    val notice = if (!used.equals(configured, ignoreCase = true)) "Using $used" else null
+                    acceptTorrents(torrents, params, replace = true, notice = notice)
                 },
                 onFailure = { e ->
                     if (e is CancellationException) return@fold
@@ -326,10 +348,10 @@ class SearchViewModel(application: Application) : AndroidViewModel(application) 
     fun refresh() = search(recordHistory = false, forceNetwork = true)
 
     fun loadNextPage() {
-        if (searchJob?.isActive == true || loadMoreJob?.isActive == true) return
+        if (loadMoreJob?.isActive == true) return
 
         val state = _uiState.value
-        if (state.isLoading || state.isLoadingMore || !state.canLoadMore) return
+        if (state.isLoading || state.isRefreshing || state.isLoadingMore || !state.canLoadMore) return
 
         val nextPage = state.searchParams.page + 1
         val params = state.searchParams.copy(page = nextPage)
@@ -348,19 +370,8 @@ class SearchViewModel(application: Application) : AndroidViewModel(application) 
             if (generation != requestGeneration) return@launch
             result.fold(
                 onSuccess = { torrents ->
-                    _uiState.update { current ->
-                        val (merged, canLoadMore) = mergeSearchPages(
-                            existing = current.torrents,
-                            incoming = torrents,
-                            replace = false
-                        )
-                        current.copy(
-                            isLoadingMore = false,
-                            torrents = merged,
-                            searchParams = params,
-                            canLoadMore = canLoadMore
-                        )
-                    }
+                    if (generation != requestGeneration) return@launch
+                    acceptTorrents(torrents, params, replace = false, notice = _uiState.value.notice)
                 },
                 onFailure = { e ->
                     if (e is CancellationException) return@fold
@@ -384,9 +395,88 @@ class SearchViewModel(application: Application) : AndroidViewModel(application) 
     }
 
     fun torrentByNavId(navId: String, site: CatalogSite? = null): Torrent? =
-        _uiState.value.torrents.find {
+        rawTorrents.find {
+            it.matchesNavId(navId) && (site == null || it.site == site)
+        } ?: _uiState.value.torrents.find {
             it.matchesNavId(navId) && (site == null || it.site == site)
         }
+
+    private fun currentFilter() = localFilter.toResultFilter(prefs.hideRules())
+
+    private fun publishRaw(
+        raw: List<Torrent>,
+        params: SearchParams,
+        canLoadMore: Boolean,
+        hasSearched: Boolean,
+        isLoading: Boolean,
+        isRefreshing: Boolean,
+        isLoadingMore: Boolean,
+        error: String?,
+        notice: String?
+    ) {
+        rawTorrents = raw
+        val filtered = raw.filter { it.passes(currentFilter()) }
+        _uiState.update {
+            it.copy(
+                torrents = filtered,
+                hiddenCount = (raw.size - filtered.size).coerceAtLeast(0),
+                searchParams = params,
+                localFilter = localFilter,
+                canLoadMore = canLoadMore,
+                hasSearched = hasSearched,
+                isLoading = isLoading,
+                isRefreshing = isRefreshing,
+                isLoadingMore = isLoadingMore,
+                error = error,
+                notice = notice
+            )
+        }
+    }
+
+    private fun acceptTorrents(
+        incoming: List<Torrent>,
+        params: SearchParams,
+        replace: Boolean,
+        notice: String?,
+        refreshingAfter: Boolean = false
+    ) {
+        val (merged, canLoadMore) = mergeSearchPages(
+            existing = if (replace) emptyList() else rawTorrents,
+            incoming = incoming,
+            replace = replace
+        )
+        publishRaw(
+            raw = merged,
+            params = params,
+            canLoadMore = canLoadMore,
+            hasSearched = true,
+            isLoading = false,
+            isRefreshing = refreshingAfter,
+            isLoadingMore = false,
+            error = null,
+            notice = notice
+        )
+        if (!refreshingAfter) maybeAutoLoad()
+    }
+
+    private fun maybeAutoLoad() {
+        val state = _uiState.value
+        if (autoLoadsRemaining <= 0) return
+        if (state.torrents.size >= MIN_VISIBLE_RESULTS) return
+        if (state.hiddenCount <= 0) return
+        if (!state.canLoadMore || state.isLoading || state.isRefreshing) return
+        autoLoadsRemaining -= 1
+        val pending = loadMoreJob
+        viewModelScope.launch {
+            pending?.join()
+            loadNextPage()
+        }
+    }
+
+    private companion object {
+        const val MIN_VISIBLE_RESULTS = 10
+        const val AUTO_LOAD_LIMIT = 4
+    }
 
     suspend fun saveCurrentSearch(name: String, notify: Boolean): Long {
         val params = _uiState.value.searchParams.copy(query = _query.value)

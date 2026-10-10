@@ -47,10 +47,10 @@ Updates must be signed with the same key to install over the old app. Builds fro
 ## How to use it
 
 **Search**  
-Latest listings load when you open the app (you can turn that off in Settings). Type in the search bar and press search, or tap **Show latest**. Use `user:Name` to find an uploader. Category chips (Anime, Audio, and so on) sit under the bar. **Trusted** and **No remakes** are one tap. A dot on the filter button means extra filters are on. Long-press a result for magnet, bookmark, share, or follow a show.
+Latest listings load when you open the app (you can turn that off in Settings). Type in the search bar and press search, or tap **Show latest**. Use `user:Name` to find an uploader. One row under the bar sets category, trusted, no remakes, quality, codec, minimum seeders, batches, and sort. **Reset** on that row returns to your Settings defaults. Closing the app does the same. Long-press a result for magnet, bookmark, share, or follow a show.
 
 **Filters**  
-The filter button opens sort options and subcategories (**More**). You can also save the current search from that sheet.
+Quality, codec, seeders, and batches are applied on the phone to pages already loaded. If a page is mostly hidden, Aniyaa loads a few more. Set the defaults under **Settings → Search defaults**. **Hide rules** in Settings drop any listing whose title, uploader, or release group contains that text. Saved-search alerts use the same rules and defaults. Save the current Nyaa search from the bookmark icon.
 
 **Sukebei**  
 Off by default. Turn on **Enable Sukebei (18+)** in Settings. Nyaa / Sukebei chips then appear on Search.
