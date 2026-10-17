@@ -10,6 +10,7 @@ import com.nyaa.aniyaa.data.model.SearchParams
 import com.nyaa.aniyaa.data.model.Torrent
 import com.nyaa.aniyaa.util.passes
 import com.nyaa.aniyaa.work.SavedSearchAlerts
+import com.nyaa.aniyaa.work.matchesAlert
 import com.nyaa.aniyaa.work.SavedSearchWorker
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
@@ -73,6 +74,19 @@ class SearchHistoryViewModel(application: Application) : AndroidViewModel(applic
         viewModelScope.launch { savedSearchRepository.update(search.copy(name = trimmed)) }
     }
 
+    fun markSeen(search: SavedSearch) {
+        if (search.unseenCount == 0) return
+        viewModelScope.launch { savedSearchRepository.update(search.copy(unseenCount = 0)) }
+    }
+
+    fun updateAlertRule(search: SavedSearch, trustedOnly: Boolean, resolution: String) {
+        viewModelScope.launch {
+            savedSearchRepository.update(
+                search.copy(alertTrustedOnly = trustedOnly, alertResolution = resolution)
+            )
+        }
+    }
+
     fun toggleNotify(search: SavedSearch) {
         viewModelScope.launch {
             savedSearchRepository.update(search.copy(notify = !search.notify))
@@ -90,11 +104,15 @@ class SearchHistoryViewModel(application: Application) : AndroidViewModel(applic
             }
             val ids = torrents.map { it.id }.filter { it.isNotBlank() }
             val newIds = SavedSearchAlerts.newIds(ids, search.lastSeenIds).toSet()
-            val visibleNew = torrents.filter { it.id in newIds && it.passes(app.prefs.defaultResultFilter()) }
+            val visibleNew = torrents.filter {
+                it.id in newIds && it.passes(app.prefs.defaultResultFilter()) && matchesAlert(it, search)
+            }
             savedSearchRepository.update(
                 search.copy(
                     lastSeenIds = SavedSearchAlerts.storeIds(ids),
-                    lastCheckedAt = System.currentTimeMillis()
+                    lastCheckedAt = System.currentTimeMillis(),
+                    lastHeadline = if (torrents.isEmpty()) search.lastHeadline else com.nyaa.aniyaa.util.watchingHeadline(torrents.first().title),
+                    unseenCount = if (visibleNew.isNotEmpty()) visibleNew.size else search.unseenCount
                 )
             )
             _message.value = if (visibleNew.isEmpty()) {

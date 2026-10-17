@@ -2,7 +2,8 @@ package com.nyaa.aniyaa.util
 
 data class ParsedReleaseTitle(
     val group: String?,
-    val show: String?
+    val show: String?,
+    val episode: String? = null
 )
 
 fun parseReleaseTitle(title: String): ParsedReleaseTitle {
@@ -13,15 +14,16 @@ fun parseReleaseTitle(title: String): ParsedReleaseTitle {
     rest = rest.replace(BRACKET_REGEX, " ").replace(PAREN_REGEX, " ")
     rest = rest.replace(Regex("\\s+"), " ").trim()
     rest = rest.removeSuffix(".mkv").removeSuffix(".mp4").removeSuffix(".avi").trim()
-    val episode = EPISODE_REGEX.find(rest)
-    val show = if (episode != null) {
-        rest.substring(0, episode.range.first).trim().trimEnd('-').trim()
+    val episodeMatch = EPISODE_REGEX.find(rest)
+    val show = if (episodeMatch != null) {
+        rest.substring(0, episodeMatch.range.first).trim().trimEnd('-').trim()
     } else {
         rest
     }.takeIf { it.length >= 2 }
     return ParsedReleaseTitle(
         group = group?.takeIf { it.length in 2..32 && !it.contains("http", ignoreCase = true) },
-        show = show?.takeIf { it != group }
+        show = show?.takeIf { it != group },
+        episode = episodeMatch?.groupValues?.getOrNull(1)?.trim()?.takeIf { it.isNotEmpty() }
     )
 }
 
@@ -29,7 +31,7 @@ private val GROUP_REGEX = Regex("^\\[([^\\]]+)]")
 private val BRACKET_REGEX = Regex("\\[[^]]+]")
 private val PAREN_REGEX = Regex("\\([^)]+\\)")
 private val EPISODE_REGEX = Regex(
-    "\\s[-–]\\s(?:S\\d+E\\d+|E\\d+|\\d{1,4}(?:\\.\\d+)?)\\b",
+    "\\s[-–]\\s(S\\d+E\\d+|E\\d+|\\d{1,4}(?:\\.\\d+)?)\\b",
     RegexOption.IGNORE_CASE
 )
 
@@ -48,6 +50,9 @@ fun qualityTags(title: String): List<String> {
     }
     if (DUAL_AUDIO.containsMatchIn(title)) tags += "Dual Audio"
     if (HDR.containsMatchIn(title)) tags += "HDR"
+    if (MULTI_SUB.containsMatchIn(title)) tags += "Multi-Subs"
+    else if (SOFT_SUB.containsMatchIn(title)) tags += "Softsub"
+    if (DUB.containsMatchIn(title) && !DUAL_AUDIO.containsMatchIn(title)) tags += "Dub"
     return tags
 }
 
@@ -60,3 +65,14 @@ private val CODEC_AV1 = Regex("\\bav1\\b", RegexOption.IGNORE_CASE)
 private val CODEC_AVC = Regex("x264|h\\.?264|\\bavc\\b", RegexOption.IGNORE_CASE)
 private val DUAL_AUDIO = Regex("dual[- ]?audio", RegexOption.IGNORE_CASE)
 private val HDR = Regex("\\b(?:HDR10\\+?|Dolby.?Vision|\\bDV\\b)\\b", RegexOption.IGNORE_CASE)
+private val MULTI_SUB = Regex("multi[- ]?subs?", RegexOption.IGNORE_CASE)
+private val SOFT_SUB = Regex("soft[- ]?subs?", RegexOption.IGNORE_CASE)
+private val DUB = Regex("(?<![\\w-])dub(?:bed)?\\b", RegexOption.IGNORE_CASE)
+
+fun watchingHeadline(title: String): String {
+    val parsed = parseReleaseTitle(title)
+    val episode = parsed.episode?.let { "ep $it" }
+    val quality = qualityTags(title).firstOrNull { it.endsWith("p") }
+    val show = parsed.show ?: title.trim().take(48)
+    return listOfNotNull(show, episode, parsed.group, quality).joinToString(" · ")
+}

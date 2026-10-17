@@ -18,7 +18,20 @@ import com.nyaa.aniyaa.util.CodecChoice
 import com.nyaa.aniyaa.util.LocalFilter
 import com.nyaa.aniyaa.util.ResolutionChoice
 import com.nyaa.aniyaa.util.ResultFilter
+import com.nyaa.aniyaa.util.SubtitleChoice
+import com.nyaa.aniyaa.util.inQuietHours
 import java.security.SecureRandom
+
+enum class RemoteKind(val id: String, val label: String) {
+    NONE("none", "Off"),
+    QBITTORRENT("qbittorrent", "qBittorrent"),
+    TRANSMISSION("transmission", "Transmission");
+
+    companion object {
+        fun fromId(value: String): RemoteKind =
+            entries.find { it.id == value } ?: NONE
+    }
+}
 
 class AppPreferences(context: Context) {
 
@@ -178,6 +191,10 @@ class AppPreferences(context: Context) {
         get() = CodecChoice.fromTag(prefs.getString(KEY_DEFAULT_CODEC, "").orEmpty()).tag
         set(value) = prefs.edit().putString(KEY_DEFAULT_CODEC, CodecChoice.fromTag(value).tag).apply()
 
+    var defaultSubtitleTag: String
+        get() = SubtitleChoice.fromTag(prefs.getString(KEY_DEFAULT_SUBTITLE, "").orEmpty()).tag
+        set(value) = prefs.edit().putString(KEY_DEFAULT_SUBTITLE, SubtitleChoice.fromTag(value).tag).apply()
+
     var defaultMinSeeders: Int
         get() = LocalFilter.coerceSeeders(prefs.getInt(KEY_DEFAULT_MIN_SEEDERS, 0))
         set(value) = prefs.edit().putInt(KEY_DEFAULT_MIN_SEEDERS, LocalFilter.coerceSeeders(value)).apply()
@@ -189,9 +206,41 @@ class AppPreferences(context: Context) {
     fun defaultLocalFilter(): LocalFilter = LocalFilter(
         resolution = ResolutionChoice.fromTag(defaultResolutionTag),
         codec = CodecChoice.fromTag(defaultCodecTag),
+        subtitle = SubtitleChoice.fromTag(defaultSubtitleTag),
         minSeeders = defaultMinSeeders,
         hideBatches = defaultHideBatches
     )
+
+    var quietHoursEnabled: Boolean
+        get() = prefs.getBoolean(KEY_QUIET_ENABLED, false)
+        set(value) = prefs.edit().putBoolean(KEY_QUIET_ENABLED, value).apply()
+
+    var quietStartHour: Int
+        get() = prefs.getInt(KEY_QUIET_START, 23).coerceIn(0, 23)
+        set(value) = prefs.edit().putInt(KEY_QUIET_START, value.coerceIn(0, 23)).apply()
+
+    var quietEndHour: Int
+        get() = prefs.getInt(KEY_QUIET_END, 7).coerceIn(0, 23)
+        set(value) = prefs.edit().putInt(KEY_QUIET_END, value.coerceIn(0, 23)).apply()
+
+    fun quietHoursActive(hour: Int): Boolean =
+        inQuietHours(hour, quietStartHour, quietEndHour, quietHoursEnabled)
+
+    var remoteKind: RemoteKind
+        get() = RemoteKind.fromId(prefs.getString(KEY_REMOTE_KIND, RemoteKind.NONE.id).orEmpty())
+        set(value) = prefs.edit().putString(KEY_REMOTE_KIND, value.id).apply()
+
+    var remoteBaseUrl: String
+        get() = prefs.getString(KEY_REMOTE_URL, "").orEmpty()
+        set(value) = prefs.edit().putString(KEY_REMOTE_URL, value.trim()).apply()
+
+    var remoteUsername: String
+        get() = prefs.getString(KEY_REMOTE_USER, "").orEmpty()
+        set(value) = prefs.edit().putString(KEY_REMOTE_USER, value).apply()
+
+    var remotePassword: String
+        get() = prefs.getString(KEY_REMOTE_PASSWORD, "").orEmpty()
+        set(value) = prefs.edit().putString(KEY_REMOTE_PASSWORD, value).apply()
 
     fun hideRules(): List<String> =
         prefs.getString(KEY_HIDE_RULES, "").orEmpty()
@@ -301,6 +350,14 @@ class AppPreferences(context: Context) {
         private const val KEY_DEFAULT_SORT_ORDER = "default_sort_order"
         private const val KEY_DEFAULT_RESOLUTION = "default_resolution"
         private const val KEY_DEFAULT_CODEC = "default_codec"
+        private const val KEY_DEFAULT_SUBTITLE = "default_subtitle"
+        private const val KEY_QUIET_ENABLED = "quiet_hours_enabled"
+        private const val KEY_QUIET_START = "quiet_hours_start"
+        private const val KEY_QUIET_END = "quiet_hours_end"
+        private const val KEY_REMOTE_KIND = "remote_kind"
+        private const val KEY_REMOTE_URL = "remote_url"
+        private const val KEY_REMOTE_USER = "remote_user"
+        private const val KEY_REMOTE_PASSWORD = "remote_password"
         private const val KEY_DEFAULT_MIN_SEEDERS = "default_min_seeders"
         private const val KEY_DEFAULT_HIDE_BATCHES = "default_hide_batches"
         private const val KEY_HIDE_RULES = "hide_rules"

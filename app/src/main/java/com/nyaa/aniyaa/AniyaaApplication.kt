@@ -12,6 +12,7 @@ import com.nyaa.aniyaa.data.repository.BookmarkRepository
 import com.nyaa.aniyaa.data.repository.SavedSearchRepository
 import com.nyaa.aniyaa.data.repository.SearchHistoryRepository
 import com.nyaa.aniyaa.data.repository.NyaaRepository
+import com.nyaa.aniyaa.data.repository.SentRepository
 import com.nyaa.aniyaa.data.repository.ViewedListingRepository
 import com.nyaa.aniyaa.ui.lock.AppLockController
 import com.nyaa.aniyaa.work.SavedSearchWorker
@@ -40,6 +41,8 @@ class AniyaaApplication : Application() {
         private set
     lateinit var viewedListingRepository: ViewedListingRepository
         private set
+    lateinit var sentRepository: SentRepository
+        private set
     val lockController = AppLockController()
 
     override fun onCreate() {
@@ -60,6 +63,7 @@ class AniyaaApplication : Application() {
         savedSearchRepository = SavedSearchRepository(database)
         nyaaRepository = NyaaRepository()
         viewedListingRepository = ViewedListingRepository(database)
+        sentRepository = SentRepository(database)
         applicationScope.launch {
             database.migrateFromLegacy(this@AniyaaApplication, prefs)
         }

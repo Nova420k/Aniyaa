@@ -266,6 +266,7 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
                     app.historyRepository.clear()
                     app.savedSearchRepository.replaceAll(emptyList())
                     app.viewedListingRepository.replaceAll(emptyList())
+                    app.sentRepository.clear()
                     com.nyaa.aniyaa.data.network.AppHttpClient.clearCache()
                 }
                 _message.value = "Local data cleared"

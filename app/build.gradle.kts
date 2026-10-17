@@ -39,7 +39,7 @@ fun versionCodeFromName(name: String): Int? {
     return code.takeIf { it > 0 }
 }
 
-val defaultVersionName = "2.5.3"
+val defaultVersionName = "2.5.4"
 val defaultVersionCode = versionCodeFromName(defaultVersionName) ?: 17
 
 android {

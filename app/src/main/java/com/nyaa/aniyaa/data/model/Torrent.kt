@@ -223,7 +223,11 @@ data class SavedSearch(
     val sortOrderValue: String = SortOrder.DESC.value,
     val notify: Boolean = false,
     val lastSeenIds: String = "",
-    val lastCheckedAt: Long = 0L
+    val lastCheckedAt: Long = 0L,
+    val lastHeadline: String = "",
+    val unseenCount: Int = 0,
+    val alertTrustedOnly: Boolean = false,
+    val alertResolution: String = ""
 ) {
     fun toSearchParams(): SearchParams = SearchParams(
         query = query,

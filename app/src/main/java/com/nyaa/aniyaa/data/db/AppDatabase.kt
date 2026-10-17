@@ -21,9 +21,10 @@ import org.json.JSONObject
         BookmarkEntity::class,
         HistoryEntity::class,
         SavedSearchEntity::class,
-        ViewedListingEntity::class
+        ViewedListingEntity::class,
+        SentListingEntity::class
     ],
-    version = 2,
+    version = 3,
     exportSchema = false
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -31,10 +32,29 @@ abstract class AppDatabase : RoomDatabase() {
     abstract fun historyDao(): HistoryDao
     abstract fun savedSearchDao(): SavedSearchDao
     abstract fun viewedListingDao(): ViewedListingDao
+    abstract fun sentListingDao(): SentListingDao
 
     companion object {
         @Volatile
         private var instance: AppDatabase? = null
+
+        val MIGRATION_2_3 = object : Migration(2, 3) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    """
+                    CREATE TABLE IF NOT EXISTS sent_listings (
+                        identity TEXT NOT NULL,
+                        sentAt INTEGER NOT NULL,
+                        PRIMARY KEY(identity)
+                    )
+                    """.trimIndent()
+                )
+                db.execSQL("ALTER TABLE saved_searches ADD COLUMN lastHeadline TEXT NOT NULL DEFAULT ''")
+                db.execSQL("ALTER TABLE saved_searches ADD COLUMN unseenCount INTEGER NOT NULL DEFAULT 0")
+                db.execSQL("ALTER TABLE saved_searches ADD COLUMN alertTrustedOnly INTEGER NOT NULL DEFAULT 0")
+                db.execSQL("ALTER TABLE saved_searches ADD COLUMN alertResolution TEXT NOT NULL DEFAULT ''")
+            }
+        }
 
         val MIGRATION_1_2 = object : Migration(1, 2) {
             override fun migrate(db: SupportSQLiteDatabase) {
@@ -73,7 +93,7 @@ abstract class AppDatabase : RoomDatabase() {
                     context.applicationContext,
                     AppDatabase::class.java,
                     "aniyaa.db"
-                ).addMigrations(MIGRATION_1_2).build().also { instance = it }
+                ).addMigrations(MIGRATION_1_2, MIGRATION_2_3).build().also { instance = it }
             }
         }
     }

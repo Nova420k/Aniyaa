@@ -127,7 +127,12 @@ import com.nyaa.aniyaa.util.openMagnet
 import com.nyaa.aniyaa.util.magnetExportText
 import com.nyaa.aniyaa.util.CodecChoice
 import com.nyaa.aniyaa.util.LocalFilter
+import com.nyaa.aniyaa.util.ReleaseGroup
 import com.nyaa.aniyaa.util.ResolutionChoice
+import com.nyaa.aniyaa.util.SubtitleChoice
+import com.nyaa.aniyaa.util.groupReleases
+import com.nyaa.aniyaa.util.launchHandoff
+import com.nyaa.aniyaa.util.variantLabel
 import com.nyaa.aniyaa.util.parseReleaseTitle
 import com.nyaa.aniyaa.util.qualityTags
 import com.nyaa.aniyaa.util.prepareSavedSearchAlerts
@@ -149,6 +154,8 @@ fun SearchScreen(
     val query by viewModel.query.collectAsStateWithLifecycle()
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     val bookmarks by bookmarkViewModel.allBookmarks.collectAsStateWithLifecycle()
+    val sentKeys by AniyaaApplication.instance.sentRepository.observe().collectAsStateWithLifecycle(emptyList())
+    val sentSet = sentKeys.toSet()
     val snackbarHostState = remember { SnackbarHostState() }
     val scope = rememberCoroutineScope()
     val keyboardController = LocalSoftwareKeyboardController.current
@@ -194,7 +201,7 @@ fun SearchScreen(
 
     val hideKey = prefs.hideRules().joinToString("\n")
     val local = uiState.localFilter
-    val searchIdentity = "${uiState.searchParams.site.id}|${uiState.searchParams.query}|${uiState.searchParams.category.value}|${uiState.searchParams.filter.value}|${uiState.searchParams.sortField.value}|${uiState.searchParams.sortOrder.value}|${local.resolution}|${local.codec}|${local.minSeeders}|${local.hideBatches}|$hideKey"
+    val searchIdentity = "${uiState.searchParams.site.id}|${uiState.searchParams.query}|${uiState.searchParams.category.value}|${uiState.searchParams.filter.value}|${uiState.searchParams.sortField.value}|${uiState.searchParams.sortOrder.value}|${local.resolution}|${local.codec}|${local.subtitle}|${local.minSeeders}|${local.hideBatches}|$hideKey"
     LaunchedEffect(searchIdentity) {
         listState.scrollToItem(0)
     }
@@ -343,10 +350,7 @@ fun SearchScreen(
                     Button(
                         onClick = {
                             val selected = uiState.torrents.filter { it.bookmarkKey() in selectedKeys }
-                            selected.forEach { torrent ->
-                                openMagnet(context, torrent.resolvedMagnet(), prefs.preferredTorrentPackage)
-                            }
-                            scope.launch { snackbarHostState.showSnackbar("Opened ${selected.size} magnet${if (selected.size == 1) "" else "s"}") }
+                            launchHandoff(scope, context, prefs, selected, snackbarHostState)
                             selecting = false
                             selectedKeys = emptySet()
                         },
@@ -385,9 +389,9 @@ fun SearchScreen(
                 onRefresh = viewModel::refresh,
                 onLoadMore = viewModel::loadNextPage,
                 onResetFilters = viewModel::resetFilters,
+                sentKeys = sentSet,
                 onMagnet = { torrent ->
-                    val error = openMagnet(context, torrent.resolvedMagnet(), prefs.preferredTorrentPackage)
-                    if (error != null) scope.launch { snackbarHostState.showSnackbar(error) }
+                    launchHandoff(scope, context, prefs, listOf(torrent), snackbarHostState)
                 },
                 onToggleBookmark = { torrent -> bookmarkViewModel.toggleBookmark(torrent) },
                 onCopyMagnet = { torrent ->
@@ -536,6 +540,7 @@ private fun SearchResultsBody(
     onFollow: (String, String) -> Unit,
     onSearchQuery: (String) -> Unit,
     onOpenUser: (String) -> Unit,
+    sentKeys: Set<String> = emptySet(),
     modifier: Modifier = Modifier
 ) {
     PullToRefreshBox(
@@ -678,13 +683,28 @@ private fun SearchResultsBody(
                             )
                         }
                     }
+                    val rows = if (selecting) {
+                        uiState.torrents.map { ReleaseGroup(listOf(it)) }
+                    } else {
+                        groupReleases(uiState.torrents)
+                    }
                     itemsIndexed(
-                        items = uiState.torrents,
-                        key = { index, torrent -> torrent.listKey(index) },
-                        contentType = { _, _ -> "torrent" }
-                    ) { _, torrent ->
+                        items = rows,
+                        key = { index, row -> row.primary.listKey(index) },
+                        contentType = { _, row -> if (row.variants.size > 1) "group" else "torrent" }
+                    ) { _, row ->
+                        if (row.variants.size > 1 && !selecting) {
+                            ReleaseGroupCard(
+                                group = row,
+                                sent = row.variants.any { it.bookmarkKey() in sentKeys },
+                                onOpen = onTorrentClick
+                            )
+                            return@itemsIndexed
+                        }
+                        val torrent = row.primary
                         TorrentCard(
                             torrent = torrent,
+                            sent = torrent.bookmarkKey() in sentKeys,
                             onClick = {
                                 if (selecting) onToggleSelect(torrent) else onTorrentClick(torrent)
                             },
@@ -721,7 +741,7 @@ private fun SearchResultsBody(
     }
 }
 
-private enum class OpenMenu { Category, Quality, Codec, Seeds, Sort }
+private enum class OpenMenu { Category, Quality, Codec, Subtitles, Seeds, Sort }
 
 @Composable
 private fun CompactFilterBar(
@@ -806,6 +826,23 @@ private fun CompactFilterBar(
                     onClick = {
                         openMenu = null
                         onLocalFilter(localFilter.copy(codec = choice))
+                    }
+                )
+            }
+        }
+        MenuChip(
+            label = if (localFilter.subtitle == SubtitleChoice.ANY) "Subs" else localFilter.subtitle.label,
+            selected = localFilter.subtitle != SubtitleChoice.ANY,
+            expanded = openMenu == OpenMenu.Subtitles,
+            onExpand = { openMenu = if (openMenu == OpenMenu.Subtitles) null else OpenMenu.Subtitles },
+            onDismiss = { openMenu = null }
+        ) {
+            SubtitleChoice.entries.forEach { choice ->
+                DropdownMenuItem(
+                    text = { Text(choice.label) },
+                    onClick = {
+                        openMenu = null
+                        onLocalFilter(localFilter.copy(subtitle = choice))
                     }
                 )
             }
@@ -996,6 +1033,46 @@ private fun SearchSkeletonCard(alpha: Float) {
     }
 }
 
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+private fun ReleaseGroupCard(
+    group: ReleaseGroup,
+    sent: Boolean,
+    onOpen: (Torrent) -> Unit
+) {
+    Card(modifier = Modifier.fillMaxWidth()) {
+        Column(modifier = Modifier.padding(12.dp)) {
+            Text(
+                text = group.label(),
+                style = MaterialTheme.typography.bodyMedium,
+                fontWeight = FontWeight.SemiBold,
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis
+            )
+            if (sent) {
+                Text("Sent", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary)
+            }
+            Spacer(Modifier.height(8.dp))
+            FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                group.variants.forEach { variant ->
+                    Surface(
+                        shape = RoundedCornerShape(8.dp),
+                        color = MaterialTheme.colorScheme.secondaryContainer,
+                        modifier = Modifier.clickable { onOpen(variant) }
+                    ) {
+                        Text(
+                            text = variantLabel(variant),
+                            style = MaterialTheme.typography.labelSmall,
+                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+                            color = MaterialTheme.colorScheme.onSecondaryContainer
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
+
 @OptIn(ExperimentalLayoutApi::class, ExperimentalFoundationApi::class)
 @Composable
 fun TorrentCard(
@@ -1013,7 +1090,8 @@ fun TorrentCard(
     onFollow: ((String, String) -> Unit)? = null,
     onSearchQuery: ((String) -> Unit)? = null,
     onOpenUser: ((String) -> Unit)? = null,
-    viewed: Boolean = false
+    viewed: Boolean = false,
+    sent: Boolean = false
 ) {
     var menu by remember { mutableStateOf(false) }
     val parsed = remember(torrent.title) { parseReleaseTitle(torrent.title) }
@@ -1136,6 +1214,17 @@ fun TorrentCard(
                             modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                             fontWeight = FontWeight.Medium
+                        )
+                    }
+                }
+                if (sent) {
+                    Surface(shape = RoundedCornerShape(8.dp), color = MaterialTheme.colorScheme.primaryContainer) {
+                        Text(
+                            text = "Sent",
+                            style = MaterialTheme.typography.labelSmall,
+                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+                            color = MaterialTheme.colorScheme.onPrimaryContainer,
+                            fontWeight = FontWeight.Bold
                         )
                     }
                 }

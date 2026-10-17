@@ -1,5 +1,18 @@
 package com.nyaa.aniyaa.work
 
+import com.nyaa.aniyaa.data.model.SavedSearch
+import com.nyaa.aniyaa.data.model.Torrent
+import com.nyaa.aniyaa.util.qualityTags
+
+fun matchesAlert(torrent: Torrent, search: SavedSearch): Boolean {
+    if (search.alertTrustedOnly && !torrent.trusted) return false
+    if (search.alertResolution.isNotBlank()) {
+        val resolution = qualityTags(torrent.title).firstOrNull { it.endsWith("p") }
+        if (resolution != search.alertResolution) return false
+    }
+    return true
+}
+
 object SavedSearchAlerts {
     const val STORED_ID_LIMIT = 40
 

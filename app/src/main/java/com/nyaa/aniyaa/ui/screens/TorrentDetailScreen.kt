@@ -112,7 +112,7 @@ import com.nyaa.aniyaa.util.downloadTorrentFile
 import com.nyaa.aniyaa.util.filterFileEntries
 import com.nyaa.aniyaa.util.isSafeHttpUrl
 import com.nyaa.aniyaa.util.openHttpUrl
-import com.nyaa.aniyaa.util.openMagnet
+import com.nyaa.aniyaa.util.launchHandoff
 import com.nyaa.aniyaa.util.parseReleaseTitle
 import com.nyaa.aniyaa.util.shareText as sharePlainText
 import com.nyaa.aniyaa.util.totalSizeLabel
@@ -200,7 +200,7 @@ fun TorrentDetailScreen(
                 },
                 actions = {
                     if (magnetLink.isNotEmpty()) {
-                        IconButton(onClick = { openMagnet(context, magnetLink, prefs.preferredTorrentPackage)?.let(::showMessage) }) {
+                        IconButton(onClick = { launchHandoff(scope, context, prefs, listOf(displayTorrent), snackbarHostState) }) {
                             Icon(
                                 Icons.Default.Link,
                                 contentDescription = "Open magnet",
@@ -360,7 +360,7 @@ fun TorrentDetailScreen(
                     ) {
                         if (magnetLink.isNotEmpty()) {
                             FilledTonalButton(
-                                onClick = { openMagnet(context, magnetLink, prefs.preferredTorrentPackage)?.let(::showMessage) },
+                                onClick = { launchHandoff(scope, context, prefs, listOf(displayTorrent), snackbarHostState) },
                                 modifier = Modifier.weight(1f),
                                 shape = RoundedCornerShape(12.dp)
                             ) {
@@ -383,7 +383,15 @@ fun TorrentDetailScreen(
                         }
                         if (displayTorrent.link.isNotEmpty()) {
                             FilledTonalButton(
-                                onClick = { showMessage(downloadTorrentFile(context, displayTorrent)) },
+                                onClick = {
+                                    val message = downloadTorrentFile(context, displayTorrent)
+                                    showMessage(message)
+                                    if (message.startsWith("Downloading")) {
+                                        scope.launch {
+                                            com.nyaa.aniyaa.AniyaaApplication.instance.sentRepository.add(displayTorrent.bookmarkKey())
+                                        }
+                                    }
+                                },
                                 modifier = Modifier.weight(1f),
                                 shape = RoundedCornerShape(12.dp)
                             ) {

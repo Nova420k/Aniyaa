@@ -570,6 +570,7 @@ fun AniyaaApp(
                             goToSearch()
                         },
                         onSavedSearchClick = { saved ->
+                            searchHistoryViewModel.markSeen(saved)
                             searchViewModel.applySavedSearch(saved)
                             goToSearch()
                         },

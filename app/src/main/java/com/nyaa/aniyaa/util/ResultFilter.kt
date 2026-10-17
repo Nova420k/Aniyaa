@@ -27,15 +27,29 @@ enum class CodecChoice(val tag: String, val label: String) {
     }
 }
 
+enum class SubtitleChoice(val tag: String, val label: String) {
+    ANY("", "Any"),
+    SOFTSUB("Softsub", "Softsub"),
+    MULTI("Multi-Subs", "Multi"),
+    DUB("Dub", "Dub");
+
+    companion object {
+        fun fromTag(value: String): SubtitleChoice =
+            entries.find { it.tag.equals(value, ignoreCase = true) } ?: ANY
+    }
+}
+
 data class LocalFilter(
     val resolution: ResolutionChoice = ResolutionChoice.ANY,
     val codec: CodecChoice = CodecChoice.ANY,
+    val subtitle: SubtitleChoice = SubtitleChoice.ANY,
     val minSeeders: Int = 0,
     val hideBatches: Boolean = false
 ) {
     fun toResultFilter(hideRules: List<String>): ResultFilter = ResultFilter(
         resolution = resolution,
         codec = codec,
+        subtitle = subtitle,
         minSeeders = minSeeders,
         hideBatches = hideBatches,
         hideRules = hideRules
@@ -52,6 +66,7 @@ data class LocalFilter(
 data class ResultFilter(
     val resolution: ResolutionChoice = ResolutionChoice.ANY,
     val codec: CodecChoice = CodecChoice.ANY,
+    val subtitle: SubtitleChoice = SubtitleChoice.ANY,
     val minSeeders: Int = 0,
     val hideBatches: Boolean = false,
     val hideRules: List<String> = emptyList()
@@ -66,6 +81,9 @@ fun Torrent.passes(filter: ResultFilter): Boolean {
     }
     if (filter.codec != CodecChoice.ANY) {
         if (filter.codec.tag !in qualityTags(title)) return false
+    }
+    if (filter.subtitle != SubtitleChoice.ANY) {
+        if (filter.subtitle.tag !in qualityTags(title)) return false
     }
     if (filter.hideRules.any { matchesHideRule(this, it) }) return false
     return true

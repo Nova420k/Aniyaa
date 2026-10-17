@@ -122,7 +122,11 @@ data class SavedSearchEntity(
     val sortOrderValue: String,
     val notify: Boolean,
     val lastSeenIds: String,
-    val lastCheckedAt: Long
+    val lastCheckedAt: Long,
+    val lastHeadline: String = "",
+    val unseenCount: Int = 0,
+    val alertTrustedOnly: Boolean = false,
+    val alertResolution: String = ""
 ) {
     fun toModel(): SavedSearch = SavedSearch(
         id = id,
@@ -135,9 +139,19 @@ data class SavedSearchEntity(
         sortOrderValue = sortOrderValue,
         notify = notify,
         lastSeenIds = lastSeenIds,
-        lastCheckedAt = lastCheckedAt
+        lastCheckedAt = lastCheckedAt,
+        lastHeadline = lastHeadline,
+        unseenCount = unseenCount,
+        alertTrustedOnly = alertTrustedOnly,
+        alertResolution = alertResolution
     )
 }
+
+@Entity(tableName = "sent_listings")
+data class SentListingEntity(
+    @PrimaryKey val identity: String,
+    val sentAt: Long
+)
 
 @Entity(tableName = "viewed_listings")
 data class ViewedListingEntity(
@@ -217,5 +231,9 @@ fun SavedSearch.toEntity(): SavedSearchEntity = SavedSearchEntity(
     sortOrderValue = sortOrderValue,
     notify = notify,
     lastSeenIds = lastSeenIds,
-    lastCheckedAt = lastCheckedAt
+    lastCheckedAt = lastCheckedAt,
+    lastHeadline = lastHeadline,
+    unseenCount = unseenCount,
+    alertTrustedOnly = alertTrustedOnly,
+    alertResolution = alertResolution
 )

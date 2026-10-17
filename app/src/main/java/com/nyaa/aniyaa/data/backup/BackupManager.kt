@@ -56,6 +56,10 @@ class BackupManager(
                 put("notify", search.notify)
                 put("lastSeenIds", search.lastSeenIds)
                 put("lastCheckedAt", search.lastCheckedAt)
+                put("lastHeadline", search.lastHeadline)
+                put("unseenCount", search.unseenCount)
+                put("alertTrustedOnly", search.alertTrustedOnly)
+                put("alertResolution", search.alertResolution)
             })
         }
         root.put("savedSearches", savedArray)
@@ -87,6 +91,13 @@ class BackupManager(
                 put("defaultCodec", prefs.defaultCodecTag)
                 put("defaultMinSeeders", prefs.defaultMinSeeders)
                 put("defaultHideBatches", prefs.defaultHideBatches)
+                put("defaultSubtitle", prefs.defaultSubtitleTag)
+                put("quietHoursEnabled", prefs.quietHoursEnabled)
+                put("quietStartHour", prefs.quietStartHour)
+                put("quietEndHour", prefs.quietEndHour)
+                put("remoteKind", prefs.remoteKind.id)
+                put("remoteBaseUrl", prefs.remoteBaseUrl)
+                put("remoteUsername", prefs.remoteUsername)
                 put("hideRules", JSONArray(prefs.hideRules()))
             }
         )
@@ -141,7 +152,11 @@ class BackupManager(
                 sortOrderValue = obj.optString("sortOrderValue", "desc"),
                 notify = obj.optBoolean("notify"),
                 lastSeenIds = obj.optString("lastSeenIds"),
-                lastCheckedAt = obj.optLong("lastCheckedAt")
+                lastCheckedAt = obj.optLong("lastCheckedAt"),
+                lastHeadline = obj.optString("lastHeadline"),
+                unseenCount = obj.optInt("unseenCount"),
+                alertTrustedOnly = obj.optBoolean("alertTrustedOnly"),
+                alertResolution = obj.optString("alertResolution")
             )
         }
         if (merge) savedSearches.merge(savedItems) else savedSearches.replaceAll(savedItems)
@@ -193,6 +208,15 @@ class BackupManager(
             if (settings.has("defaultCodec")) prefs.defaultCodecTag = settings.optString("defaultCodec")
             if (settings.has("defaultMinSeeders")) prefs.defaultMinSeeders = settings.optInt("defaultMinSeeders")
             if (settings.has("defaultHideBatches")) prefs.defaultHideBatches = settings.optBoolean("defaultHideBatches")
+            if (settings.has("defaultSubtitle")) prefs.defaultSubtitleTag = settings.optString("defaultSubtitle")
+            if (settings.has("quietHoursEnabled")) prefs.quietHoursEnabled = settings.optBoolean("quietHoursEnabled")
+            if (settings.has("quietStartHour")) prefs.quietStartHour = settings.optInt("quietStartHour")
+            if (settings.has("quietEndHour")) prefs.quietEndHour = settings.optInt("quietEndHour")
+            if (settings.has("remoteKind")) {
+                prefs.remoteKind = com.nyaa.aniyaa.data.prefs.RemoteKind.fromId(settings.optString("remoteKind"))
+            }
+            if (settings.has("remoteBaseUrl")) prefs.remoteBaseUrl = settings.optString("remoteBaseUrl")
+            if (settings.has("remoteUsername")) prefs.remoteUsername = settings.optString("remoteUsername")
             if (settings.has("hideRules")) {
                 val rules = settings.optJSONArray("hideRules")
                 if (rules != null) {

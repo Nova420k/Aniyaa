@@ -19,13 +19,17 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.BookmarkBorder
+import androidx.compose.material.icons.filled.CheckBox
+import androidx.compose.material.icons.filled.CheckBoxOutlineBlank
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Share
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.Button
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -59,6 +63,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
+import com.nyaa.aniyaa.AniyaaApplication
 import com.nyaa.aniyaa.data.api.resolvedMagnet
 import com.nyaa.aniyaa.data.model.BookmarkSort
 import com.nyaa.aniyaa.data.model.CatalogSite
@@ -66,8 +71,8 @@ import com.nyaa.aniyaa.data.model.Torrent
 import com.nyaa.aniyaa.data.prefs.AppPreferences
 import com.nyaa.aniyaa.ui.viewmodel.BookmarkViewModel
 import com.nyaa.aniyaa.util.copyText
+import com.nyaa.aniyaa.util.launchHandoff
 import com.nyaa.aniyaa.util.magnetExportText
-import com.nyaa.aniyaa.util.openMagnet
 import com.nyaa.aniyaa.util.shareText
 import com.nyaa.aniyaa.util.torrentShareText
 import kotlinx.coroutines.launch
@@ -90,6 +95,9 @@ fun BookmarksScreen(
     val scope = rememberCoroutineScope()
     val context = LocalContext.current
     val prefs = remember { AppPreferences(context) }
+    var selecting by remember { mutableStateOf(false) }
+    var selectedKeys by remember { mutableStateOf(setOf<String>()) }
+    val sentIds by AniyaaApplication.instance.sentRepository.observe().collectAsStateWithLifecycle(emptyList())
     var sortMenu by remember { mutableStateOf(false) }
     val listState = rememberLazyListState()
     val listScrolling by remember { derivedStateOf { listState.isScrollInProgress } }
@@ -112,6 +120,17 @@ fun BookmarksScreen(
                 },
                 actions = {
                     if (bookmarks.isNotEmpty()) {
+                        IconButton(onClick = {
+                            selecting = !selecting
+                            if (!selecting) selectedKeys = emptySet()
+                        }) {
+                            Icon(
+                                if (selecting) Icons.Default.CheckBox else Icons.Default.CheckBoxOutlineBlank,
+                                contentDescription = if (selecting) "Done selecting" else "Select bookmarks"
+                            )
+                        }
+                    }
+                    if (bookmarks.isNotEmpty() && !selecting) {
                         IconButton(onClick = {
                             val magnets = magnetExportText(bookmarks)
                             if (magnets.isBlank()) {
@@ -139,6 +158,28 @@ fun BookmarksScreen(
                 .fillMaxSize()
                 .padding(paddingValues)
         ) {
+            if (selecting && selectedKeys.isNotEmpty()) {
+                Row(
+                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    Button(onClick = {
+                        val selected = bookmarks.filter { it.bookmarkKey() in selectedKeys }
+                        launchHandoff(scope, context, prefs, selected, snackbarHostState)
+                        selecting = false
+                        selectedKeys = emptySet()
+                    }) { Text("Open magnets (${selectedKeys.size})") }
+                    OutlinedButton(onClick = {
+                        val magnets = magnetExportText(bookmarks.filter { it.bookmarkKey() in selectedKeys })
+                        if (magnets.isBlank()) {
+                            scope.launch { snackbarHostState.showSnackbar("No magnet links to copy") }
+                        } else {
+                            copyText(context, "Magnets", magnets)
+                            scope.launch { snackbarHostState.showSnackbar("Copied ${magnets.lines().size} magnets") }
+                        }
+                    }) { Text("Copy magnets") }
+                }
+            }
             if (allBookmarks.isNotEmpty() || query.isNotBlank()) {
                 OutlinedTextField(
                     value = query,
@@ -294,12 +335,20 @@ fun BookmarksScreen(
                             ) {
                                 TorrentCard(
                                     torrent = torrent,
-                                    onClick = onTorrentClick,
+                                    onClick = {
+                                        if (selecting) {
+                                            val key = torrent.bookmarkKey()
+                                            selectedKeys = if (key in selectedKeys) selectedKeys - key else selectedKeys + key
+                                        } else {
+                                            onTorrentClick(torrent)
+                                        }
+                                    },
                                     isBookmarked = true,
+                                    selected = torrent.bookmarkKey() in selectedKeys,
+                                    sent = torrent.bookmarkKey() in sentIds,
                                     showSiteBadge = siteFilter == null,
                                     onMagnet = {
-                                        val error = openMagnet(context, torrent.resolvedMagnet(), prefs.preferredTorrentPackage)
-                                        if (error != null) scope.launch { snackbarHostState.showSnackbar(error) }
+                                        launchHandoff(scope, context, prefs, listOf(torrent), snackbarHostState)
                                     },
                                     onCopyMagnet = {
                                         copyText(context, "Magnet Link", torrent.resolvedMagnet())

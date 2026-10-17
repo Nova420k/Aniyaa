@@ -95,6 +95,7 @@ import com.nyaa.aniyaa.data.model.sortOrderByValue
 import com.nyaa.aniyaa.util.CodecChoice
 import com.nyaa.aniyaa.util.LocalFilter
 import com.nyaa.aniyaa.util.ResolutionChoice
+import com.nyaa.aniyaa.util.SubtitleChoice
 import com.nyaa.aniyaa.ui.theme.APP_THEMES
 import com.nyaa.aniyaa.ui.theme.AppTheme
 import com.nyaa.aniyaa.ui.theme.rememberThemeSwatch
@@ -135,6 +136,14 @@ fun SettingsScreen(
     var defaultOrder by remember { mutableStateOf(prefs.defaultSortOrderValue(currentSite)) }
     var defaultResolution by remember { mutableStateOf(prefs.defaultResolutionTag) }
     var defaultCodec by remember { mutableStateOf(prefs.defaultCodecTag) }
+    var defaultSubtitle by remember { mutableStateOf(prefs.defaultSubtitleTag) }
+    var quietEnabled by remember { mutableStateOf(prefs.quietHoursEnabled) }
+    var quietStart by remember { mutableStateOf(prefs.quietStartHour) }
+    var quietEnd by remember { mutableStateOf(prefs.quietEndHour) }
+    var remoteKind by remember { mutableStateOf(prefs.remoteKind) }
+    var remoteUrl by remember { mutableStateOf(prefs.remoteBaseUrl) }
+    var remoteUser by remember { mutableStateOf(prefs.remoteUsername) }
+    var remotePassword by remember { mutableStateOf(prefs.remotePassword) }
     var defaultMinSeeders by remember { mutableStateOf(prefs.defaultMinSeeders) }
     var defaultHideBatches by remember { mutableStateOf(prefs.defaultHideBatches) }
     var hideRules by remember { mutableStateOf(prefs.hideRules()) }
@@ -342,6 +351,7 @@ fun SettingsScreen(
                 sortOrderValue = defaultOrder,
                 resolutionTag = defaultResolution,
                 codecTag = defaultCodec,
+                subtitleTag = defaultSubtitle,
                 minSeeders = defaultMinSeeders,
                 hideBatches = defaultHideBatches,
                 onSite = { site ->
@@ -369,6 +379,10 @@ fun SettingsScreen(
                     defaultCodec = tag
                     settingsViewModel.setDefaultCodec(tag)
                 },
+                onSubtitle = { tag ->
+                    defaultSubtitle = tag
+                    prefs.defaultSubtitleTag = tag
+                },
                 onMinSeeders = { value ->
                     defaultMinSeeders = value
                     settingsViewModel.setDefaultMinSeeders(value)
@@ -379,6 +393,95 @@ fun SettingsScreen(
                 }
             )
 
+            Spacer(Modifier.height(12.dp))
+            SettingsSwitchRow(
+                "Quiet hours",
+                "Skip saved-search checks overnight. New results wait until the window ends.",
+                quietEnabled
+            ) { enabled ->
+                quietEnabled = enabled
+                prefs.quietHoursEnabled = enabled
+            }
+            if (quietEnabled) {
+                Text("From $quietStart:00 to $quietEnd:00", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.outline)
+                FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    listOf(0, 6, 7, 22, 23).forEach { hour ->
+                        FilterChip(
+                            selected = quietStart == hour,
+                            onClick = {
+                                quietStart = hour
+                                prefs.quietStartHour = hour
+                            },
+                            label = { Text("Start $hour") }
+                        )
+                    }
+                }
+                FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    listOf(6, 7, 8, 9).forEach { hour ->
+                        FilterChip(
+                            selected = quietEnd == hour,
+                            onClick = {
+                                quietEnd = hour
+                                prefs.quietEndHour = hour
+                            },
+                            label = { Text("End $hour") }
+                        )
+                    }
+                }
+            }
+            Spacer(Modifier.height(28.dp))
+            SectionLabel("Remote client")
+            Text(
+                "Optional. Magnets go to qBittorrent or Transmission on your network. Use https when you can. The password stays on this phone.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.outline
+            )
+            Spacer(Modifier.height(8.dp))
+            FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                com.nyaa.aniyaa.data.prefs.RemoteKind.entries.forEach { kind ->
+                    FilterChip(
+                        selected = remoteKind == kind,
+                        onClick = {
+                            remoteKind = kind
+                            prefs.remoteKind = kind
+                        },
+                        label = { Text(kind.label) }
+                    )
+                }
+            }
+            if (remoteKind != com.nyaa.aniyaa.data.prefs.RemoteKind.NONE) {
+                Spacer(Modifier.height(8.dp))
+                OutlinedTextField(
+                    value = remoteUrl,
+                    onValueChange = { remoteUrl = it },
+                    label = { Text("Address") },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth()
+                )
+                Spacer(Modifier.height(8.dp))
+                OutlinedTextField(
+                    value = remoteUser,
+                    onValueChange = { remoteUser = it },
+                    label = { Text("Username") },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth()
+                )
+                Spacer(Modifier.height(8.dp))
+                OutlinedTextField(
+                    value = remotePassword,
+                    onValueChange = { remotePassword = it },
+                    label = { Text("Password") },
+                    singleLine = true,
+                    visualTransformation = PasswordVisualTransformation(),
+                    modifier = Modifier.fillMaxWidth()
+                )
+                Spacer(Modifier.height(8.dp))
+                Button(onClick = {
+                    prefs.remoteBaseUrl = remoteUrl
+                    prefs.remoteUsername = remoteUser
+                    prefs.remotePassword = remotePassword
+                }) { Text("Save client") }
+            }
             Spacer(Modifier.height(28.dp))
             SectionLabel("Hide rules")
             Text(
@@ -832,7 +935,7 @@ private fun SectionLabel(text: String) {
     }
 }
 
-private enum class DefaultFilterMenu { Catalog, Category, Quality, Codec, Seeds, Sort }
+private enum class DefaultFilterMenu { Catalog, Category, Quality, Codec, Subtitles, Seeds, Sort }
 
 @Composable
 private fun DefaultFilterRow(
@@ -843,6 +946,7 @@ private fun DefaultFilterRow(
     sortOrderValue: String,
     resolutionTag: String,
     codecTag: String,
+    subtitleTag: String,
     minSeeders: Int,
     hideBatches: Boolean,
     onSite: (CatalogSite) -> Unit,
@@ -850,6 +954,7 @@ private fun DefaultFilterRow(
     onSort: (String, String) -> Unit,
     onResolution: (String) -> Unit,
     onCodec: (String) -> Unit,
+    onSubtitle: (String) -> Unit,
     onMinSeeders: (Int) -> Unit,
     onHideBatches: (Boolean) -> Unit
 ) {
@@ -858,6 +963,7 @@ private fun DefaultFilterRow(
     val sortOrder = sortOrderByValue(sortOrderValue)
     val resolution = ResolutionChoice.fromTag(resolutionTag)
     val codec = CodecChoice.fromTag(codecTag)
+    val subtitle = SubtitleChoice.fromTag(subtitleTag)
     var openMenu by remember { mutableStateOf<DefaultFilterMenu?>(null) }
     Row(
         modifier = Modifier
@@ -933,6 +1039,23 @@ private fun DefaultFilterRow(
                     onClick = {
                         openMenu = null
                         onCodec(choice.tag)
+                    }
+                )
+            }
+        }
+        MenuChip(
+            label = if (subtitle == SubtitleChoice.ANY) "Subs" else subtitle.label,
+            selected = subtitle != SubtitleChoice.ANY,
+            expanded = openMenu == DefaultFilterMenu.Subtitles,
+            onExpand = { openMenu = if (openMenu == DefaultFilterMenu.Subtitles) null else DefaultFilterMenu.Subtitles },
+            onDismiss = { openMenu = null }
+        ) {
+            SubtitleChoice.entries.forEach { choice ->
+                DropdownMenuItem(
+                    text = { Text(choice.label) },
+                    onClick = {
+                        openMenu = null
+                        onSubtitle(choice.tag)
                     }
                 )
             }

@@ -86,6 +86,27 @@ interface SavedSearchDao {
 }
 
 @Dao
+interface SentListingDao {
+    @Query("SELECT identity FROM sent_listings")
+    fun observe(): Flow<List<String>>
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun upsert(entity: SentListingEntity)
+
+    @Query("DELETE FROM sent_listings WHERE identity = :identity")
+    suspend fun delete(identity: String)
+
+    @Query("DELETE FROM sent_listings")
+    suspend fun deleteAll()
+
+    @Query(
+        "DELETE FROM sent_listings WHERE identity NOT IN " +
+            "(SELECT identity FROM sent_listings ORDER BY sentAt DESC LIMIT :keep)"
+    )
+    suspend fun trim(keep: Int)
+}
+
+@Dao
 interface ViewedListingDao {
     @Query("SELECT * FROM viewed_listings ORDER BY viewedAt DESC")
     fun observe(): Flow<List<ViewedListingEntity>>

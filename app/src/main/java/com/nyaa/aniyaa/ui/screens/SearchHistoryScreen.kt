@@ -102,6 +102,7 @@ fun SearchHistoryScreen(
     var confirmClearHistory by remember { mutableStateOf(false) }
     var pendingDeleteSaved by remember { mutableStateOf<SavedSearch?>(null) }
     var renaming by remember { mutableStateOf<SavedSearch?>(null) }
+    var alertRules by remember { mutableStateOf<SavedSearch?>(null) }
     var renameValue by remember { mutableStateOf("") }
     LaunchedEffect(message) {
         val text = message
@@ -265,7 +266,7 @@ fun SearchHistoryScreen(
                     if (saved.isNotEmpty()) {
                         item {
                             Text(
-                                text = "Saved searches",
+                                text = "Watching",
                                 style = MaterialTheme.typography.titleSmall,
                                 fontWeight = FontWeight.Bold,
                                 color = MaterialTheme.colorScheme.primary,
@@ -298,7 +299,8 @@ fun SearchHistoryScreen(
                                         searchHistoryViewModel.toggleNotify(search)
                                     }
                                 },
-                                onDelete = { pendingDeleteSaved = search }
+                                onDelete = { pendingDeleteSaved = search },
+                                onAlertRules = { alertRules = search }
                             )
                         }
                     }
@@ -386,6 +388,30 @@ fun SearchHistoryScreen(
             dismissButton = { TextButton(onClick = { pendingDeleteSaved = null }) { Text("Cancel") } }
         )
     }
+    val rules = alertRules
+    if (rules != null) {
+        AlertDialog(
+            onDismissRequest = { alertRules = null },
+            title = { Text("Alert rules") },
+            text = {
+                Column {
+                    Text("Notifications for this search skip listings that do not match.")
+                    TextButton(onClick = {
+                        val trusted = !rules.alertTrustedOnly
+                        searchHistoryViewModel.updateAlertRule(rules, trusted, rules.alertResolution)
+                        alertRules = rules.copy(alertTrustedOnly = trusted)
+                    }) { Text(if (rules.alertTrustedOnly) "Trusted only: on" else "Trusted only: off") }
+                    listOf("" to "Any quality", "2160p" to "2160p", "1080p" to "1080p", "720p" to "720p", "480p" to "480p").forEach { (tag, label) ->
+                        TextButton(onClick = {
+                            searchHistoryViewModel.updateAlertRule(rules, rules.alertTrustedOnly, tag)
+                            alertRules = rules.copy(alertResolution = tag)
+                        }) { Text(if (rules.alertResolution == tag) "✓ $label" else label) }
+                    }
+                }
+            },
+            confirmButton = { TextButton(onClick = { alertRules = null }) { Text("Done") } }
+        )
+    }
     val renameTarget = renaming
     if (renameTarget != null) {
         AlertDialog(
@@ -418,7 +444,8 @@ private fun SavedSearchCard(
     onCheckNow: () -> Unit,
     onRename: () -> Unit,
     onToggleNotify: () -> Unit,
-    onDelete: () -> Unit
+    onDelete: () -> Unit,
+    onAlertRules: () -> Unit
 ) {
     var menu by remember { mutableStateOf(false) }
     Card(
@@ -459,6 +486,17 @@ private fun SavedSearchCard(
                 if (summary.isNotBlank()) {
                     Text(text = summary, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis)
                 }
+                if (search.lastHeadline.isNotBlank() || search.unseenCount > 0) {
+                    val unseen = if (search.unseenCount > 0) "${search.unseenCount} new" else ""
+                    val line = listOf(search.lastHeadline, unseen).filter { it.isNotBlank() }.joinToString(" · ")
+                    Text(
+                        text = line,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = if (search.unseenCount > 0) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+                        maxLines = 2,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                }
                 if (search.lastCheckedAt > 0L) {
                     Text(
                         text = "Checked ${formatTimestamp(search.lastCheckedAt)}",
@@ -481,6 +519,7 @@ private fun SavedSearchCard(
                 DropdownMenu(expanded = menu, onDismissRequest = { menu = false }) {
                     DropdownMenuItem(text = { Text("Copy RSS URL") }, onClick = { menu = false; onCopyRss() })
                     DropdownMenuItem(text = { Text("Check now") }, onClick = { menu = false; onCheckNow() })
+                    DropdownMenuItem(text = { Text("Alert rules") }, onClick = { menu = false; onAlertRules() })
                     DropdownMenuItem(text = { Text("Rename") }, onClick = { menu = false; onRename() })
                     DropdownMenuItem(text = { Text("Delete") }, onClick = { menu = false; onDelete() })
                 }

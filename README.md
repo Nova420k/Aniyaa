@@ -67,7 +67,12 @@ From the listing you can:
 - **View on Nyaa / Sukebei** — open the page in your browser
 
 **Bookmarks**  
-Star a listing to find it later. Swipe a bookmark left to remove it. When **All** catalogs are shown, each bookmark is labeled Nyaa or Sukebei.
+Star a listing to find it later. Swipe a bookmark left to remove it. When **All** catalogs are shown, each bookmark is labeled Nyaa or Sukebei. Select several bookmarks to open or copy their magnets together.
+
+**Sent, watching, and alerts**  
+Opening a magnet or downloading a `.torrent` marks the listing **Sent**. Undo that from the message that appears. History’s **Watching** list shows the latest episode for a saved search, and how many new listings arrived. Each saved search can limit alerts to trusted uploaders or one resolution. **Quiet hours** in Settings pauses those checks overnight.
+
+A home-screen widget shows one followed show. In Settings you can send magnets to qBittorrent or Transmission instead of a phone app. Same-episode results are grouped, with a chip for each quality.
 
 **History**  
 Recent searches and recently viewed listings are on the **History** tab. Saved searches can notify you of new results (Aniyaa will ask for notification permission). You can choose how often alerts run in Settings.

@@ -24,7 +24,9 @@ import com.nyaa.aniyaa.data.db.AppDatabase
 import com.nyaa.aniyaa.data.model.Torrent
 import com.nyaa.aniyaa.data.repository.NyaaRepository
 import com.nyaa.aniyaa.data.repository.SavedSearchRepository
+import com.nyaa.aniyaa.ui.widget.WatchingWidget
 import com.nyaa.aniyaa.util.passes
+import com.nyaa.aniyaa.util.watchingHeadline
 import kotlinx.coroutines.delay
 import java.util.concurrent.TimeUnit
 
@@ -39,6 +41,9 @@ class SavedSearchWorker(
         val repository = NyaaRepository()
         val notifying = savedRepo.getNotifying()
         if (notifying.isEmpty()) return Result.success()
+        val prefs = (applicationContext as AniyaaApplication).prefs
+        val hour = java.util.Calendar.getInstance().get(java.util.Calendar.HOUR_OF_DAY)
+        if (prefs.quietHoursActive(hour)) return Result.success()
         ensureChannel(applicationContext)
 
         var anyFailure = false
@@ -56,12 +61,14 @@ class SavedSearchWorker(
             if (torrents.isEmpty()) return@forEach
             val ids = torrents.map { it.id }.filter { it.isNotBlank() }
             val newIds = SavedSearchAlerts.newIds(ids, saved.lastSeenIds).toSet()
-            val filter = (applicationContext as AniyaaApplication).prefs.defaultResultFilter()
-            val visibleNew = torrents.filter { it.id in newIds && it.passes(filter) }
+            val filter = prefs.defaultResultFilter()
+            val visibleNew = torrents.filter { it.id in newIds && it.passes(filter) && matchesAlert(it, saved) }
             savedRepo.update(
                 saved.copy(
                     lastSeenIds = SavedSearchAlerts.storeIds(ids),
-                    lastCheckedAt = System.currentTimeMillis()
+                    lastCheckedAt = System.currentTimeMillis(),
+                    lastHeadline = watchingHeadline(torrents.first().title),
+                    unseenCount = if (visibleNew.isNotEmpty()) visibleNew.size else saved.unseenCount
                 )
             )
             if (visibleNew.isNotEmpty()) {
@@ -74,6 +81,7 @@ class SavedSearchWorker(
                 )
             }
         }
+        WatchingWidget.refresh(applicationContext)
         return if (anyFailure) Result.retry() else Result.success()
     }
 
