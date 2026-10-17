@@ -35,6 +35,19 @@ class ThemePreferencesTest {
     }
 
     @Test
+    fun addedPalettesHaveTheirOwnSchemes() {
+        assertEquals(
+            listOf("AMOLED", "Ink", "Umi", "Yuzu", "Wisteria", "Crimson", "Paper"),
+            APP_THEMES.drop(6).map { it.name }
+        )
+        val added = APP_THEMES.drop(6)
+        assertEquals((5..11).toList(), added.map { it.staticSchemeIndex })
+        assertTrue(added.all { !it.usesDynamicColor })
+        assertEquals(darkSchemeCount, lightSchemeCount)
+        assertTrue(APP_THEMES.all { it.staticSchemeIndex in 0 until darkSchemeCount })
+    }
+
+    @Test
     fun onlyMaterialYouUsesDynamicColor() {
         assertEquals(1, APP_THEMES.count { it.usesDynamicColor })
     }
